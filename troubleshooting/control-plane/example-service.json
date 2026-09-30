@@ -1,0 +1,58 @@
+{
+  "schemaVersion": "1.0.0",
+  "serviceName": "example-alerts-service",
+  "lastUpdated": "2026-09-30T00:00:00Z",
+  "components": [
+    {
+      "name": "Example regional API",
+      "description": "Sanitized component used to demonstrate troubleshooting knowledge.",
+      "repositoryPaths": ["src"],
+      "searchTerms": ["ExampleHealthMonitor"],
+      "environments": ["public"],
+      "dependencies": ["Example dependency"],
+      "sources": []
+    }
+  ],
+  "monitors": [
+    {
+      "name": "ExampleHealthMonitor",
+      "system": "Example monitoring",
+      "description": "Example regional health monitor.",
+      "signals": [
+        {
+          "name": "Example health signal",
+          "namespace": "Example.Service",
+          "metric": "HealthStatus",
+          "dimensions": ["region"]
+        }
+      ],
+      "repositoryPaths": ["src"],
+      "searchTerms": ["ExampleHealthMonitor", "HealthStatus"],
+      "knownFailureModes": ["Example dependency or deployment regression."],
+      "sources": []
+    }
+  ],
+  "telemetry": [
+    {
+      "name": "Example service logs",
+      "system": "Example telemetry",
+      "purpose": "Demonstrate how authoritative telemetry locations are cataloged.",
+      "namespaces": ["Example.Service"],
+      "queryGuidance": ["Filter by region and deployment timestamp."],
+      "sources": []
+    }
+  ],
+  "playbooks": [
+    {
+      "title": "Example regional health regression",
+      "symptoms": ["Health changes after a deployment."],
+      "investigationSteps": [
+        "Establish the deployment and signal timeline.",
+        "Compare the changed code and configuration with a healthy region."
+      ],
+      "possibleCauses": ["Code, configuration, infrastructure, or dependency regression."],
+      "searchTerms": ["HealthStatus"],
+      "sources": []
+    }
+  ]
+}

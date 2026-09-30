@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "1.0.0",
+  "lastUpdated": "2026-09-30T00:00:00Z",
+  "serviceFiles": [
+    "services/control-plane/example-service.json"
+  ],
+  "missingLocalRepositories": []
+}

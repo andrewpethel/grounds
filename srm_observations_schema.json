@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.example.com/srm-release-observations.schema.json",
+  "title": "SRM Release Observations",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "generatedAt", "releases"],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "releases": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/release" }
+    }
+  },
+  "$defs": {
+    "status": {
+      "type": "string",
+      "enum": ["completed", "failed", "in-progress", "canceled", "unknown"]
+    },
+    "stage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "status"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "cloud": {
+          "type": "string",
+          "enum": [
+            "public", "fairfax", "mooncake", "usnat", "ussec",
+            "bleu", "delos", "govsg", "test", "other"
+          ]
+        },
+        "status": { "$ref": "#/$defs/status" },
+        "updatedOn": { "type": "string", "format": "date-time" }
+      }
+    },
+    "release": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "serviceName", "serviceTreeId", "releaseId", "releaseName",
+        "releaseUrl", "overallStatus", "observedAt", "stages"
+      ],
+      "properties": {
+        "serviceName": { "type": "string", "minLength": 1 },
+        "serviceTreeId": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        },
+        "serviceGroupId": {
+          "description": "The EV2 service group that owns this deployment observation.",
+          "type": "string",
+          "minLength": 1
+        },
+        "releaseId": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F-]{36}$"
+        },
+        "releaseName": { "type": "string", "minLength": 1 },
+        "releaseUrl": { "type": "string", "format": "uri" },
+        "overallStatus": { "$ref": "#/$defs/status" },
+        "observedAt": { "type": "string", "format": "date-time" },
+        "updatedOn": { "type": "string", "format": "date-time" },
+        "stages": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/stage" }
+        }
+      }
+    }
+  }
+}

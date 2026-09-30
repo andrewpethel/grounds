@@ -1,0 +1,739 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.example.com/service-information.schema.json",
+  "title": "Service Information",
+  "description": "Standardized metadata describing a service, its engineering resources, deployments, dependencies, and known operational issues.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "service",
+    "operationalImpact",
+    "currentVersion",
+    "repositories",
+    "pipelines",
+    "documentation",
+    "trainingMaterials",
+    "knownIssues"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "description": "Version of this service-information document format.",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "examples": [
+        "1.0.0"
+      ]
+    },
+    "lastUpdated": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "service": {
+      "$ref": "#/$defs/service"
+    },
+    "operationalImpact": {
+      "$ref": "#/$defs/operationalImpact"
+    },
+    "currentVersion": {
+      "$ref": "#/$defs/version"
+    },
+    "owners": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/owner"
+      }
+    },
+    "repositories": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/repository"
+      }
+    },
+    "pipelines": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "build",
+        "release"
+      ],
+      "properties": {
+        "build": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pipeline"
+          }
+        },
+        "release": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pipeline"
+          }
+        }
+      }
+    },
+    "environments": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/environment"
+      }
+    },
+    "dependencies": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/dependency"
+      }
+    },
+    "documentation": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/resourceLink"
+      }
+    },
+    "trainingMaterials": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/trainingMaterial"
+      }
+    },
+    "dashboards": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/resourceLink"
+      }
+    },
+    "operationalChannels": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/operationalChannel"
+      }
+    },
+    "knownIssues": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/knownIssue"
+      }
+    },
+    "tags": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "$defs": {
+    "operationalImpact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "summary",
+        "customerBlastRadius",
+        "dependencyFanOut",
+        "notificationPathImpact",
+        "recoveryUrgency",
+        "affectedSystems"
+      ],
+      "properties": {
+        "summary": {
+          "type": "string"
+        },
+        "customerBlastRadius": {
+          "type": "string"
+        },
+        "dependencyFanOut": {
+          "type": "string"
+        },
+        "notificationPathImpact": {
+          "type": "string"
+        },
+        "recoveryUrgency": {
+          "type": "string"
+        },
+        "affectedSystems": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "service": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "displayName",
+        "description",
+        "serviceType",
+        "lifecycle"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Stable machine-readable service identifier.",
+          "examples": [
+            "am-kcm"
+          ]
+        },
+        "displayName": {
+          "type": "string",
+          "examples": [
+            "Azure Monitor Kusto Cluster Manager"
+          ]
+        },
+        "description": {
+          "type": "string"
+        },
+        "serviceType": {
+          "type": "string",
+          "enum": [
+            "control-plane",
+            "data-plane",
+            "management",
+            "monitoring",
+            "frontend",
+            "backend",
+            "shared-platform",
+            "other"
+          ]
+        },
+        "lifecycle": {
+          "type": "string",
+          "enum": [
+            "development",
+            "preview",
+            "production",
+            "deprecated",
+            "retired"
+          ]
+        },
+        "serviceTreeId": {
+          "type": "string"
+        },
+        "serviceGroupPatterns": {
+          "type": "array",
+          "description": "Case-insensitive substrings used to associate EV2 Service Groups with this catalog service when several services share a Service Tree.",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "resourceTypes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "operationalImpactTier": {
+          "type": "string",
+          "description": "Service-owner assessment of potential outage impact using customer blast radius, dependency fan-out, notification-path importance, and recovery urgency. This value is maintained in the Grounds catalog and is not currently imported from Service Tree.",
+          "enum": [
+            "critical",
+            "high",
+            "medium",
+            "low"
+          ]
+        }
+      }
+    },
+    "version": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version"
+      ],
+      "properties": {
+        "version": {
+          "type": "string"
+        },
+        "buildId": {
+          "type": [
+            "string",
+            "integer"
+          ]
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{7,40}$"
+        },
+        "branch": {
+          "type": "string"
+        },
+        "releaseDate": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "artifactName": {
+          "type": "string"
+        },
+        "releaseNotesUrl": {
+          "type": "string",
+          "format": "uri"
+        }
+      }
+    },
+    "owner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "role"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "service-owner",
+            "engineering",
+            "operations",
+            "security",
+            "product",
+            "support",
+            "other"
+          ]
+        },
+        "contact": {
+          "type": "string"
+        },
+        "serviceTreeId": {
+          "type": "string"
+        }
+      }
+    },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "provider",
+        "url",
+        "defaultBranch",
+        "purpose"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string",
+          "enum": [
+            "azure-devops",
+            "github",
+            "other"
+          ]
+        },
+        "organization": {
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "defaultBranch": {
+          "type": "string"
+        },
+        "purpose": {
+          "type": "string",
+          "enum": [
+            "primary-source",
+            "deployment",
+            "monitoring",
+            "documentation",
+            "infrastructure",
+            "tests",
+            "other"
+          ]
+        },
+        "paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "checkoutStatus": {
+          "type": "string",
+          "description": "Whether this repository is currently available in the local Grounds repository workspace.",
+          "enum": [
+            "available",
+            "not-enlisted",
+            "not-required",
+            "unknown"
+          ]
+        },
+        "localPath": {
+          "type": "string",
+          "description": "Absolute local checkout path when checkoutStatus is available."
+        }
+      }
+    },
+    "pipeline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "provider",
+        "url"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string",
+          "enum": [
+            "azure-devops",
+            "github-actions",
+            "ev2",
+            "cloudseed",
+            "other"
+          ]
+        },
+        "definitionId": {
+          "type": [
+            "string",
+            "integer"
+          ]
+        },
+        "url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "pipelineFile": {
+          "type": "string"
+        },
+        "artifactName": {
+          "type": "string"
+        },
+        "environments": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "cloud",
+        "status"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "cloud": {
+          "type": "string",
+          "enum": [
+            "public",
+            "fairfax",
+            "mooncake",
+            "usnat",
+            "ussec",
+            "bleu",
+            "delos",
+            "govsg",
+            "test",
+            "other"
+          ]
+        },
+        "region": {
+          "type": "string"
+        },
+        "stamp": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "healthy",
+            "degraded",
+            "unhealthy",
+            "deploying",
+            "disabled",
+            "unknown"
+          ]
+        },
+        "resourceGroup": {
+          "type": "string"
+        },
+        "subscriptionId": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    },
+    "dependency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "service",
+        "direction",
+        "purpose"
+      ],
+      "properties": {
+        "service": {
+          "type": "string"
+        },
+        "direction": {
+          "type": "string",
+          "enum": [
+            "upstream",
+            "downstream",
+            "bidirectional"
+          ]
+        },
+        "purpose": {
+          "type": "string"
+        },
+        "failureImpact": {
+          "type": "string"
+        },
+        "repositoryUrl": {
+          "type": "string",
+          "format": "uri"
+        }
+      }
+    },
+    "operationalChannel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "platform",
+        "purpose",
+        "url"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "platform": {
+          "const": "microsoft-teams"
+        },
+        "purpose": {
+          "type": "string",
+          "enum": [
+            "deployment",
+            "operations",
+            "on-call",
+            "support",
+            "other"
+          ]
+        },
+        "url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    },
+    "resourceLink": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "title",
+        "type",
+        "url"
+      ],
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "architecture",
+            "runbook",
+            "tsg",
+            "onboarding",
+            "api",
+            "deployment",
+            "dashboard",
+            "health-model",
+            "wiki",
+            "other"
+          ]
+        },
+        "url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "description": {
+          "type": "string"
+        },
+        "audience": {
+          "type": "string"
+        }
+      }
+    },
+    "trainingMaterial": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "title",
+        "format",
+        "url"
+      ],
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "format": {
+          "type": "string",
+          "enum": [
+            "video",
+            "presentation",
+            "workshop",
+            "lab",
+            "document",
+            "recording",
+            "other"
+          ]
+        },
+        "url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "description": {
+          "type": "string"
+        },
+        "durationMinutes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "level": {
+          "type": "string",
+          "enum": [
+            "introductory",
+            "intermediate",
+            "advanced"
+          ]
+        }
+      }
+    },
+    "knownIssue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "status",
+        "severity",
+        "summary",
+        "firstObserved"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "incidentId": {
+          "type": [
+            "string",
+            "integer"
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "active",
+            "mitigated",
+            "resolved",
+            "monitoring",
+            "known-risk",
+            "unknown"
+          ]
+        },
+        "severity": {
+          "type": "string",
+          "enum": [
+            "sev0",
+            "sev1",
+            "sev2",
+            "sev3",
+            "sev4",
+            "informational"
+          ]
+        },
+        "firstObserved": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "resolvedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "affectedEnvironments": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "affectedVersions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "summary": {
+          "type": "string"
+        },
+        "customerImpact": {
+          "type": "string"
+        },
+        "rootCause": {
+          "type": "string"
+        },
+        "triggeringDependency": {
+          "type": "string"
+        },
+        "mitigation": {
+          "type": "string"
+        },
+        "permanentFix": {
+          "type": "string"
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/resourceLink"
+          }
+        },
+        "relatedIncidents": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

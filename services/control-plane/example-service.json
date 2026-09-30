@@ -1,0 +1,54 @@
+{
+  "schemaVersion": "1.0.0",
+  "lastUpdated": "2026-09-30T00:00:00Z",
+  "service": {
+    "name": "example-alerts-service",
+    "displayName": "Example Alerts Service",
+    "description": "Sanitized example showing how an alerting service is represented in the Grounds catalog.",
+    "serviceType": "control-plane",
+    "lifecycle": "development",
+    "serviceTreeId": "00000000-0000-0000-0000-000000000000",
+    "serviceGroupPatterns": [".ExampleAlerts"],
+    "resourceTypes": ["Example.Provider/alertRules"],
+    "operationalImpactTier": "medium"
+  },
+  "operationalImpact": {
+    "summary": "Example impact statement for a control-plane service.",
+    "customerBlastRadius": "Example customers could be unable to manage alert rules.",
+    "dependencyFanOut": "Example evaluation services consume this configuration.",
+    "notificationPathImpact": "Existing rules may continue running while configuration changes are delayed.",
+    "recoveryUrgency": "Restore writes and verify queued configuration changes.",
+    "affectedSystems": ["Example alert evaluation"]
+  },
+  "currentVersion": {
+    "version": "unknown",
+    "branch": "main"
+  },
+  "repositories": [
+    {
+      "name": "example-alerts-service",
+      "provider": "github",
+      "organization": "example",
+      "url": "https://github.com/example/example-alerts-service",
+      "defaultBranch": "main",
+      "purpose": "primary-source",
+      "checkoutStatus": "not-enlisted"
+    }
+  ],
+  "pipelines": {
+    "build": [],
+    "release": []
+  },
+  "environments": [
+    {
+      "name": "Public",
+      "cloud": "public",
+      "status": "unknown"
+    }
+  ],
+  "dependencies": [],
+  "documentation": [],
+  "trainingMaterials": [],
+  "knownIssues": [],
+  "tags": ["example", "control-plane"]
+}

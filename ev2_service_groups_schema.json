@@ -1,0 +1,273 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.example.com/ev2-service-groups.schema.json",
+  "title": "EV2 Service Group Observations",
+  "description": "Authoritative, cloud-specific observations of EV2 service groups and deployment search results. These records remain separate from canonical Grounds service metadata.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "generatedAt", "observations"],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "observations": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/observation" }
+    }
+  },
+  "$defs": {
+    "cloud": {
+      "type": "string",
+      "enum": [
+        "public",
+        "fairfax",
+        "mooncake",
+        "usnat",
+        "ussec",
+        "bleu",
+        "delos",
+        "govsg",
+        "test",
+        "other"
+      ]
+    },
+    "portalDomain": {
+      "type": "string",
+      "enum": [
+        "net",
+        "microsoft.scloud",
+        "eaglex.ic.gov"
+      ]
+    },
+    "deploymentStatus": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "in-progress",
+        "completed",
+        "failed",
+        "canceled",
+        "unknown"
+      ]
+    },
+    "association": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["serviceName", "basis"],
+      "properties": {
+        "serviceName": {
+          "description": "The canonical service.name value from a Grounds service record.",
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "basis": {
+          "description": "How this EV2 service group was associated with the Grounds service.",
+          "type": "string",
+          "enum": [
+            "portal-metadata",
+            "repository-config",
+            "operator-confirmed"
+          ]
+        },
+        "evidence": {
+          "type": "string",
+          "minLength": 1
+        },
+        "confirmedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "deployment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "deploymentId",
+        "displayName",
+        "status",
+        "sourceUrl",
+        "observedAt"
+      ],
+      "properties": {
+        "deploymentId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "$ref": "#/$defs/deploymentStatus"
+        },
+        "releaseId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "buildVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "startedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "observedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "sourceUrl": {
+          "type": "string",
+          "format": "uri"
+        }
+      }
+    },
+    "serviceGroup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "serviceGroupId",
+        "displayName",
+        "sourceUrl",
+        "infrastructures",
+        "associations",
+        "deployments"
+      ],
+      "properties": {
+        "serviceGroupId": {
+          "description": "The stable service-group identifier returned by EV2.",
+          "type": "string",
+          "minLength": 1
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sourceUrl": {
+          "description": "Direct EV2 URL for this service group.",
+          "type": "string",
+          "format": "uri"
+        },
+        "infrastructures": {
+          "description": "EV2 infrastructure scopes returned for this service group, such as Prod, Test, Fairfax, or Mooncake.",
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "associations": {
+          "description": "Grounds services associated with this deployable EV2 unit.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/association" }
+        },
+        "deployments": {
+          "description": "Deployment search results observed for this service group. This may be empty when only group discovery was requested.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/deployment" }
+        }
+      }
+    },
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "serviceTreeId",
+        "cloud",
+        "portalDomain",
+        "sourceUrl",
+        "observedAt",
+        "completeness",
+        "serviceGroups"
+      ],
+      "properties": {
+        "serviceTreeId": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        },
+        "cloud": {
+          "$ref": "#/$defs/cloud"
+        },
+        "portalDomain": {
+          "$ref": "#/$defs/portalDomain"
+        },
+        "sourceUrl": {
+          "description": "The cloud-specific EV2 service-groups page used for this observation.",
+          "type": "string",
+          "format": "uri"
+        },
+        "observedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "completeness": {
+          "description": "Whether the browser session observed all service groups returned by EV2.",
+          "type": "string",
+          "enum": ["complete", "partial"]
+        },
+        "serviceGroups": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/serviceGroup" }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "cloud": { "const": "public" } },
+            "required": ["cloud"]
+          },
+          "then": {
+            "properties": {
+              "portalDomain": { "const": "net" },
+              "sourceUrl": {
+                "type": "string",
+                "pattern": "^https://ra\\.ev2portal\\.azure\\.net/#/services/[0-9a-fA-F-]{36}/servicegroups(?:[/?#].*)?$"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "cloud": { "const": "ussec" } },
+            "required": ["cloud"]
+          },
+          "then": {
+            "properties": {
+              "portalDomain": { "const": "microsoft.scloud" },
+              "sourceUrl": {
+                "type": "string",
+                "pattern": "^https://ra\\.ev2portal\\.azure\\.microsoft\\.scloud/#/services/[0-9a-fA-F-]{36}/servicegroups(?:[/?#].*)?$"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "cloud": { "const": "usnat" } },
+            "required": ["cloud"]
+          },
+          "then": {
+            "properties": {
+              "portalDomain": { "const": "eaglex.ic.gov" },
+              "sourceUrl": {
+                "type": "string",
+                "pattern": "^https://ra\\.ev2portal\\.azure\\.eaglex\\.ic\\.gov/#/services/[0-9a-fA-F-]{36}/servicegroups(?:[/?#].*)?$"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
