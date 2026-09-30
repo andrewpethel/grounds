@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
+import { resolveOperationalDataPath } from "./operational-data.mjs";
 
 const root = process.cwd();
 const schema = JSON.parse(
@@ -9,7 +10,9 @@ const schema = JSON.parse(
 );
 const observations = JSON.parse(
   await fs.readFile(
-    path.join(root, "intelligence", "srm", "release-observations.example.json"),
+    resolveOperationalDataPath(
+      path.join(root, "intelligence", "srm", "release-observations.json"),
+    ),
     "utf8",
   ),
 );

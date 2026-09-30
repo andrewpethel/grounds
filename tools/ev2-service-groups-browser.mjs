@@ -4,6 +4,7 @@ import path from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 import { chromium } from "playwright-core";
+import { readOperationalJson } from "./operational-data.mjs";
 
 const serviceTreeId = process.argv[2];
 const cloud = process.argv[3];
@@ -118,7 +119,8 @@ const observationsPath = path.join(
   "ev2",
   "service-groups.json",
 );
-const observations = JSON.parse(await fs.readFile(observationsPath, "utf8"));
+await fs.mkdir(path.dirname(observationsPath), { recursive: true });
+const observations = await readOperationalJson(observationsPath);
 const existingObservation = observations.observations.find(
   (observation) =>
     observation.serviceTreeId.toLowerCase() === serviceTreeId.toLowerCase() &&

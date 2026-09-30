@@ -255,14 +255,14 @@ deployments
 }
 
 export function srmStatusPlugin() {
-  let serviceTrees = [];
+  let root;
   let cache;
 
   return {
     name: "grounds-srm-status",
     apply: "serve",
     configResolved(config) {
-      serviceTrees = loadServiceTrees(config.root);
+      root = config.root;
     },
     configureServer(server) {
       server.middlewares.use(async (request, response, next) => {
@@ -281,17 +281,22 @@ export function srmStatusPlugin() {
         }
 
         try {
+          const serviceTrees = loadServiceTrees(root);
           const bypassCache = requestUrl.searchParams.get("refresh") === "true";
+          const serviceTreeKey = serviceTrees
+            .map((tree) => `${tree.id}:${tree.serviceNames.join("|")}`)
+            .join(",");
           if (
             !bypassCache &&
             cache &&
+            cache.serviceTreeKey === serviceTreeKey &&
             Date.now() - cache.createdAt < cacheLifetimeMilliseconds
           ) {
             sendJson(response, 200, cache.payload);
             return;
           }
           const payload = await loadReleaseStatus(serviceTrees);
-          cache = { createdAt: Date.now(), payload };
+          cache = { createdAt: Date.now(), payload, serviceTreeKey };
           sendJson(response, 200, payload);
         } catch (error) {
           sendJson(response, 400, {

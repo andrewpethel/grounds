@@ -5,6 +5,7 @@ import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 import process from "node:process";
 import { chromium } from "playwright-core";
+import { readOperationalJson } from "./operational-data.mjs";
 
 const defaultReleaseUrl =
   "https://srm.azure.com/#/ReleaseStatus/Release/00000000-0000-0000-0000-000000000000";
@@ -83,6 +84,7 @@ const observationsPath = path.join(
 );
 await fs.mkdir(profilePath, { recursive: true });
 await fs.mkdir(captureDirectory, { recursive: true });
+await fs.mkdir(path.dirname(observationsPath), { recursive: true });
 
 console.log("Opening a dedicated Grounds Edge profile.");
 console.log("Complete normal interactive sign-in in the browser if prompted.");
@@ -225,7 +227,7 @@ if (serviceName) {
     const date = new Date(value);
     return Number.isNaN(date.valueOf()) ? undefined : date.toISOString();
   };
-  const observations = JSON.parse(await fs.readFile(observationsPath, "utf8"));
+  const observations = await readOperationalJson(observationsPath);
   if (!releaseApiResponse.releaseName || !releaseApiResponse.serviceTreeId) {
     await context.close();
     throw new Error("The SRM response is missing release or Service Tree metadata.");

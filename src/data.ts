@@ -4,9 +4,11 @@ import type {
   SrmObservations,
   TeamsIntelligenceSnapshot,
 } from "./types";
-import ev2ServiceGroupData from "../intelligence/ev2/service-groups.example.json";
-import teamsIntelligenceSnapshot from "../intelligence/teams/deployment-signals.example.json";
-import srmObservationData from "../intelligence/srm/release-observations.example.json";
+import {
+  ev2ServiceGroupData,
+  srmObservationData,
+  teamsIntelligenceSnapshot,
+} from "virtual:operational-intelligence";
 import {
   catalogEntries,
   initialValidation,

@@ -782,6 +782,44 @@ const docsTopics: Array<{
   content: ReactNode;
 }> = [
   {
+    id: "onboarding",
+    eyebrow: "Getting started",
+    title: "Onboard your first service",
+    searchText:
+      "onboarding add service repository URL local enlistment Service Tree Azure CLI EV2 SRM",
+    content: (
+      <>
+        <p>
+          Start Grounds with <code>npm run dev</code>, then use{" "}
+          <strong>Add service</strong> in the Service Catalog to analyze an Azure
+          DevOps or GitHub repository URL. Review the generated record and provide
+          the exact Service Tree ID used by SRM and EV2.
+        </p>
+        <p>
+          URL onboarding is enough for catalog and authenticated deployment
+          features. Clone the repository locally and set{" "}
+          <code>checkoutStatus</code> to <code>available</code> plus an absolute{" "}
+          <code>localPath</code> to enable branch freshness, Git history, code
+          search, deployment comparisons, and Open in VS Code.
+        </p>
+        <aside className="docs-callout">
+          <strong>Authentication</strong>
+          <p>
+            Deployment status uses the active Azure CLI identity. Service Group
+            discovery uses a dedicated Edge profile and prompts for EV2 sign-in
+            when needed.
+          </p>
+        </aside>
+        <p>
+          Private service, intelligence, and troubleshooting JSON records remain
+          local and are excluded from Git. See{" "}
+          <code>docs/onboarding-your-first-service.md</code> for the complete
+          field and validation guide.
+        </p>
+      </>
+    ),
+  },
+  {
     id: "service-groups",
     eyebrow: "EV2",
     title: "Service Groups",
@@ -2351,10 +2389,14 @@ function ServiceGroupsSection({
       updatedAt: string;
     }>
   >(cachedServiceStatuses);
-  const [liveSrmLoading, setLiveSrmLoading] = useState(!cachedSrmStatus);
+  const [liveSrmLoading, setLiveSrmLoading] = useState(
+    cachedServiceStatuses.length === 0,
+  );
   const [liveSrmError, setLiveSrmError] = useState("");
   const [liveSrmGeneratedAt, setLiveSrmGeneratedAt] = useState(
-    cachedSrmStatus?.value.generatedAt ?? "",
+    cachedServiceStatuses.length > 0
+      ? (cachedSrmStatus?.value.generatedAt ?? "")
+      : "",
   );
   const [hiddenServiceGroups, setHiddenServiceGroups] = useState<string[]>(
     initialHiddenServiceGroups,
@@ -2464,7 +2506,7 @@ function ServiceGroupsSection({
   }
 
   useEffect(() => {
-    if (cachedSrmStatus) {
+    if (cachedServiceStatuses.length > 0 && cachedSrmStatus) {
       setLiveSrmStatuses(cachedServiceStatuses);
       setLiveSrmGeneratedAt(cachedSrmStatus.value.generatedAt ?? "");
       setLiveSrmLoading(false);

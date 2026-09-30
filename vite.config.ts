@@ -4,6 +4,7 @@ import { adoWorkItemsPlugin } from "./tools/ado-work-items-plugin.mjs";
 import { deploymentDiffsPlugin } from "./tools/deployment-diffs-plugin.mjs";
 import { gitHistoryPlugin } from "./tools/git-history-plugin.mjs";
 import { localReposPlugin } from "./tools/local-repos-plugin.mjs";
+import { operationalIntelligencePlugin } from "./tools/operational-intelligence-plugin.mjs";
 import { serviceCatalogPlugin } from "./tools/service-catalog-plugin.mjs";
 import { serviceChatPlugin } from "./tools/service-chat-plugin.mjs";
 import { srmCompanionPlugin } from "./tools/srm-companion-plugin.mjs";
@@ -19,6 +20,7 @@ export default defineConfig({
   },
   plugins: [
     serviceCatalogPlugin(),
+    operationalIntelligencePlugin(),
     serviceChatPlugin(),
     srmCompanionPlugin(),
     srmStatusPlugin(),
