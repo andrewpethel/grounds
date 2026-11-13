@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Grounds repository manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "services"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "services": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "displayName", "serviceTreeId"],
+        "properties": {
+          "name": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$", "maxLength": 100 },
+          "displayName": { "type": "string", "minLength": 1, "maxLength": 150, "pattern": "\\S" },
+          "domain": { "type": "string", "minLength": 1, "maxLength": 150, "allOf": [{ "pattern": "\\S" }, { "pattern": "^[^\\u0000-\\u001f\\u007f]+$" }] },
+          "serviceTreeId": {
+            "type": "string",
+            "pattern": "^(?!00000000-0000-0000-0000-000000000000$)(?![fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12}$)[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+          },
+          "description": { "type": "string", "minLength": 1, "maxLength": 2000, "pattern": "\\S" },
+          "sourcePaths": { "$ref": "#/$defs/strings" },
+          "pipelineMatching": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "build": { "$ref": "#/$defs/pipelineSelector" },
+              "release": { "$ref": "#/$defs/pipelineSelector" }
+            }
+          },
+          "pipelines": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "build": { "$ref": "#/$defs/pipelines" },
+              "release": { "$ref": "#/$defs/pipelines" }
+            }
+          },
+          "deploymentMatching": {
+            "type": "object",
+            "additionalProperties": false,
+            "minProperties": 1,
+            "properties": {
+              "serviceGroupNames": { "$ref": "#/$defs/strings" },
+              "serviceGroupNameContains": { "$ref": "#/$defs/strings" }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "pipelineSelector": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "yamlPaths": { "$ref": "#/$defs/strings" },
+        "definitionKeys": {
+          "type": "array", "minItems": 1, "maxItems": 100, "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^(build|release):[1-9][0-9]*$" }
+        },
+        "names": { "$ref": "#/$defs/strings" },
+        "namePrefixes": { "$ref": "#/$defs/strings" }
+      }
+    },
+    "pipelines": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "allOf": [
+          { "$ref": "service_schema.json#/$defs/pipeline" },
+          {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string", "maxLength": 150, "pattern": "\\S" },
+              "url": { "type": "string", "maxLength": 2048, "pattern": "^https://[^\\s]+$" }
+            }
+          }
+        ]
+      }
+    },
+    "strings": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 500, "pattern": "\\S" }
+    }
+  }
+}

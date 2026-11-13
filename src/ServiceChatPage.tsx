@@ -20,6 +20,20 @@ interface ChatContext {
   releaseId: string;
 }
 
+interface CopilotStatus {
+  authenticated: boolean;
+  signingIn: boolean;
+  busy: boolean;
+  reconnectRequired?: boolean;
+  restartRequired?: boolean;
+  operatorId?: string;
+  login?: string;
+  host?: string;
+  loginUrl?: string;
+  choices?: { selectionId: string; login: string; host: string }[];
+  error?: string;
+}
+
 async function requestJson<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, options);
   const result = await response.json();
@@ -53,6 +67,14 @@ function InlineContent({
             <a
               className="chat-citation"
               href={`#chat-source-${source.id}`}
+              onClick={(event) => {
+                event.preventDefault();
+                const target = event.currentTarget.closest("article")?.querySelector<HTMLElement>(`#chat-source-${source.id}`);
+                const details = target?.closest("details");
+                if (details) details.open = true;
+                target?.scrollIntoView({ behavior: "smooth", block: "center" });
+                target?.focus({ preventScroll: true });
+              }}
               key={index}
               title={source.title}
             >
@@ -139,7 +161,10 @@ function SourceCard({ source }: { source: ServiceChatSource }) {
       </div>
     </>
   );
-  return source.location.startsWith("http") ? (
+  if (source.type === "architecture" && /^#\/service\/[a-z0-9]+(?:-[a-z0-9]+)*\/flow$/.test(source.location)) {
+    return <a href={source.location} id={`chat-source-${source.id}`}>{content}</a>;
+  }
+  return /^https?:\/\//.test(source.location) ? (
     <a
       href={source.location}
       id={`chat-source-${source.id}`}
@@ -149,7 +174,7 @@ function SourceCard({ source }: { source: ServiceChatSource }) {
       {content}
     </a>
   ) : (
-    <div id={`chat-source-${source.id}`}>{content}</div>
+    <div id={`chat-source-${source.id}`} tabIndex={-1}>{content}</div>
   );
 }
 
@@ -187,9 +212,11 @@ function ChatMessage({ message }: { message: ServiceChatMessage }) {
 
 export function ServiceChatPage({
   onBack,
+  onFlow,
   service,
 }: {
   onBack: () => void;
+  onFlow: () => void;
   service: CatalogService;
 }) {
   const [sessions, setSessions] = useState<ServiceChatSession[]>([]);
@@ -203,6 +230,13 @@ export function ServiceChatPage({
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
+  const [connection, setConnection] = useState<CopilotStatus>({
+    authenticated: false, signingIn: false, busy: false,
+  });
+  const [connectionBusy, setConnectionBusy] = useState(false);
+  const [checkingConnection, setCheckingConnection] = useState(true);
+  const connectionVersionRef = useRef(0);
+  const selectedSession = sessions.find((session) => session.id === selectedSessionId);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const releases = useMemo(
     () =>
@@ -218,6 +252,60 @@ export function ServiceChatPage({
 
   useEffect(() => {
     let active = true;
+    let timer: ReturnType<typeof setTimeout>;
+    async function refresh() {
+      const version = connectionVersionRef.current;
+      try {
+        const next = await requestJson<CopilotStatus>("/__grounds/service-chat/copilot/status");
+        if (active && version === connectionVersionRef.current) setConnection(next);
+      } catch (nextError) {
+        if (active && version === connectionVersionRef.current) {
+          setConnection((current) => ({ ...current, authenticated: false, signingIn: false, busy: false }));
+          setError(nextError instanceof Error ? nextError.message : String(nextError));
+        }
+      } finally {
+        if (active) {
+          setCheckingConnection(false);
+          timer = setTimeout(() => void refresh(), 3000);
+        }
+      }
+    }
+    void refresh();
+    return () => { active = false; clearTimeout(timer); };
+  }, []);
+
+  async function changeConnection(action: "login" | "cancel" | "logout", selectionId?: string) {
+    connectionVersionRef.current++;
+    setConnectionBusy(true);
+    setError("");
+    try {
+      const result = await requestJson<CopilotStatus>(`/__grounds/service-chat/copilot/${action}`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(selectionId ? { selectionId } : {}),
+      });
+      connectionVersionRef.current++;
+      setConnection(result);
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : String(nextError));
+    } finally {
+      setConnectionBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    setSessions([]);
+    setSelectedSessionId(undefined);
+    setMessages([]);
+    setQuestion("");
+    setContext({ environment: "", releaseId: "" });
+  }, [service.service.name, connection.operatorId]);
+
+  useEffect(() => {
+    if (!connection.authenticated || !connection.operatorId) {
+      setLoading(false);
+      return;
+    }
+    let active = true;
     setLoading(true);
     requestJson<{ sessions: ServiceChatSession[] }>(
       `/__grounds/service-chat/sessions?serviceName=${encodeURIComponent(service.service.name)}`,
@@ -225,7 +313,8 @@ export function ServiceChatPage({
       .then((result) => {
         if (!active) return;
         setSessions(result.sessions);
-        setSelectedSessionId(result.sessions[0]?.id);
+        setSelectedSessionId((current) =>
+          result.sessions.some((session) => session.id === current) ? current : result.sessions[0]?.id);
       })
       .catch((nextError) => {
         if (active) setError(nextError.message);
@@ -236,9 +325,10 @@ export function ServiceChatPage({
     return () => {
       active = false;
     };
-  }, [service.service.name]);
+  }, [service.service.name, connection.operatorId, connection.authenticated]);
 
   useEffect(() => {
+    if (sending || !connection.authenticated) return;
     if (!selectedSessionId) {
       setMessages([]);
       return;
@@ -249,7 +339,16 @@ export function ServiceChatPage({
       `/__grounds/service-chat/sessions/${encodeURIComponent(selectedSessionId)}/messages`,
     )
       .then((result) => {
-        if (active) setMessages(result.messages);
+        if (active) {
+          setMessages(result.messages);
+          const previous = [...result.messages].reverse().find((message) => message.role === "user");
+          if (!question.trim()) {
+            setContext({
+              environment: previous?.context?.environment ?? "",
+              releaseId: previous?.context?.releaseId ?? "",
+            });
+          }
+        }
       })
       .catch((nextError) => {
         if (active) setError(nextError.message);
@@ -260,7 +359,7 @@ export function ServiceChatPage({
     return () => {
       active = false;
     };
-  }, [selectedSessionId]);
+  }, [selectedSessionId, connection.operatorId, connection.authenticated, sending]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -284,23 +383,13 @@ export function ServiceChatPage({
   async function submitQuestion(event: FormEvent) {
     event.preventDefault();
     const nextQuestion = question.trim();
-    if (!nextQuestion || sending) return;
+    if (!nextQuestion || sending || loading || connectionBusy || !connection.authenticated || selectedSession?.readOnly) return;
     setSending(true);
     setError("");
-    setQuestion("");
     try {
       const session =
         sessions.find((item) => item.id === selectedSessionId) ??
         (await createSession());
-      const optimistic: ServiceChatMessage = {
-        id: `pending-${Date.now()}`,
-        sessionId: session.id,
-        role: "user",
-        content: nextQuestion,
-        sources: [],
-        createdAt: new Date().toISOString(),
-      };
-      setMessages((current) => [...current, optimistic]);
       const result = await requestJson<{
         assistantMessage: ServiceChatMessage;
         session: ServiceChatSession;
@@ -320,20 +409,28 @@ export function ServiceChatPage({
         },
       );
       setMessages((current) => [
-        ...current.filter((message) => message.id !== optimistic.id),
+        ...current,
         result.userMessage,
         result.assistantMessage,
       ]);
+      setQuestion("");
       setSessions((current) => [
         result.session,
         ...current.filter((item) => item.id !== result.session.id),
       ]);
     } catch (nextError) {
-      setQuestion(nextQuestion);
-      setMessages((current) =>
-        current.filter((message) => !message.id.startsWith("pending-")),
-      );
       setError(nextError instanceof Error ? nextError.message : String(nextError));
+      const version = ++connectionVersionRef.current;
+      try {
+        const next = await requestJson<CopilotStatus>("/__grounds/service-chat/copilot/status");
+        if (version === connectionVersionRef.current) setConnection(next);
+      } catch (connectionError) {
+        if (version === connectionVersionRef.current) {
+          setConnection((current) => ({ ...current, authenticated: false }));
+          setError(`${nextError instanceof Error ? nextError.message : String(nextError)} Connection check failed: ${
+            connectionError instanceof Error ? connectionError.message : String(connectionError)}`);
+        }
+      }
     } finally {
       setSending(false);
     }
@@ -369,18 +466,51 @@ export function ServiceChatPage({
             Ask about deployments, monitors, code, telemetry, dependencies, and
             operational evidence. Answers cite the sources Grounds used.
           </p>
+          <button className="back-button" onClick={onFlow} type="button">
+            Architecture flow
+          </button>
         </div>
-        <span className="service-chat-provider-status">
+        <span className="service-chat-provider-status" data-connected={connection.authenticated}>
           <span />
-          Grounds grounded provider
+          {connection.authenticated ? `GitHub Copilot · ${connection.login}` : "GitHub Copilot not connected"}
         </span>
       </header>
+
+      <section className="service-chat-connection" aria-label="AI connection">
+        <div>
+          <strong>{connection.authenticated ? `Connected as ${connection.login}` : connection.reconnectRequired ? "Reconnect your GitHub Copilot account" : "Connect your GitHub Copilot account"}</strong>
+          <p>
+            Questions, recent conversation history, and selected service/code evidence are sent to GitHub Copilot.
+            Use an organization-approved account. Grounds never asks for your password or token.
+          </p>
+          {connection.signingIn && <p>Complete sign-in in your browser. Secure storage is required; plaintext token storage is refused.</p>}
+          {connection.loginUrl && (
+            <a href={connection.loginUrl} rel="noreferrer" target="_blank">Open GitHub sign-in</a>
+          )}
+          {connection.choices?.map((choice) => (
+            <button disabled={connectionBusy} key={choice.selectionId}
+              onClick={() => void changeConnection("login", choice.selectionId)} type="button">
+              Use {choice.login} ({choice.host})
+            </button>
+          ))}
+          {connection.error && <p role="alert">{connection.error}</p>}
+        </div>
+        {connection.signingIn ? (
+          <button disabled={connectionBusy} onClick={() => void changeConnection("cancel")} type="button">Cancel sign-in</button>
+        ) : (
+          <button disabled={connectionBusy || checkingConnection || sending || connection.busy || connection.restartRequired}
+            onClick={() => void changeConnection(connection.authenticated ? "logout" : "login")} type="button">
+            {connectionBusy || checkingConnection ? "Checking connection..." : connection.restartRequired ? "Restart Grounds to reconnect" : connection.authenticated ? "Sign out of Copilot" : connection.reconnectRequired ? "Reconnect GitHub Copilot" : "Connect GitHub Copilot"}
+          </button>
+        )}
+      </section>
 
       <div className="service-chat-layout">
         <aside className="service-chat-sessions">
           <button
             className="new-chat-button"
-            onClick={() => void createSession()}
+            disabled={!connection.authenticated || sending || connectionBusy}
+            onClick={() => void createSession().catch((nextError: Error) => setError(nextError.message))}
             type="button"
           >
             + New investigation
@@ -392,10 +522,12 @@ export function ServiceChatPage({
                 key={session.id}
               >
                 <button
+                  disabled={!connection.authenticated || sending || connectionBusy}
                   onClick={() => setSelectedSessionId(session.id)}
                   type="button"
                 >
                   <strong>{session.title}</strong>
+                  {session.readOnly && <small>Local history (read-only)</small>}
                   <time dateTime={session.updatedAt}>
                     {new Intl.DateTimeFormat("en-US", {
                       dateStyle: "medium",
@@ -405,7 +537,8 @@ export function ServiceChatPage({
                 <button
                   aria-label={`Delete ${session.title}`}
                   className="delete-chat-button"
-                  onClick={() => void deleteSession(session.id)}
+                  disabled={!connection.authenticated || sending || connectionBusy}
+                  onClick={() => void deleteSession(session.id).catch((nextError: Error) => setError(nextError.message))}
                   type="button"
                 >
                   ×
@@ -423,6 +556,7 @@ export function ServiceChatPage({
             <label>
               Environment
               <select
+                disabled={sending}
                 onChange={(event) =>
                   setContext((current) => ({
                     ...current,
@@ -442,6 +576,7 @@ export function ServiceChatPage({
             <label>
               Deployment
               <select
+                disabled={sending}
                 onChange={(event) =>
                   setContext((current) => ({
                     ...current,
@@ -459,6 +594,10 @@ export function ServiceChatPage({
               </select>
             </label>
           </div>
+          {selectedSession?.readOnly && (
+            <p className="service-chat-legacy">This investigation predates Copilot sign-in. Its history stays local.
+              Start a new investigation to use AI.</p>
+          )}
 
           <div className="service-chat-thread" aria-live="polite">
             {messages.length === 0 && !loading ? (
@@ -466,8 +605,9 @@ export function ServiceChatPage({
                 <span>✦</span>
                 <h2>Start a service investigation</h2>
                 <p>
-                  Grounds will correlate catalog knowledge, troubleshooting records,
-                  captured deployments, and matching local source code.
+                  {connection.authenticated
+                    ? "Copilot will use this service's evidence and recent conversation history. Repository search is bounded; deployments are captured snapshots, not live telemetry."
+                    : "Connect GitHub Copilot to begin. A Microsoft 365 Copilot license alone does not provide GitHub Copilot access."}
                 </p>
                 <div>
                   {starterQuestions.map((starter) => (
@@ -489,7 +629,7 @@ export function ServiceChatPage({
             {sending && (
               <div className="service-chat-thinking">
                 <span />
-                Correlating service evidence...
+                Investigating with GitHub Copilot...
               </div>
             )}
             <div ref={messagesEndRef} />
@@ -498,6 +638,7 @@ export function ServiceChatPage({
           <form className="service-chat-composer" onSubmit={submitQuestion}>
             {error && <p role="alert">{error}</p>}
             <textarea
+              disabled={sending || loading || connectionBusy || !connection.authenticated || selectedSession?.readOnly}
               onChange={(event) => setQuestion(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey) {
@@ -513,7 +654,7 @@ export function ServiceChatPage({
               <span>
                 Verify live telemetry before rollback, redeploy, or mitigation.
               </span>
-              <button disabled={!question.trim() || sending} type="submit">
+              <button disabled={!question.trim() || sending || loading || connectionBusy || !connection.authenticated || selectedSession?.readOnly} type="submit">
                 {sending ? "Investigating..." : "Send"}
               </button>
             </footer>

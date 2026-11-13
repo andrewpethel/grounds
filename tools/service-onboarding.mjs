@@ -236,17 +236,6 @@ export async function analyzeRepositoryUrl(value) {
 
 export function createServiceRecord(payload) {
   const repository = parseRepositoryUrl(payload.repositoryUrl);
-  const domain = String(payload.domain ?? "");
-  const allowedDomains = new Set([
-    "control-plane",
-    "data-plane",
-    "alerts-management",
-    "aiops",
-  ]);
-  if (!allowedDomains.has(domain)) {
-    throw new Error("Select a valid service domain.");
-  }
-
   const serviceName = slugify(payload.serviceName);
   const displayName = String(payload.displayName ?? "").trim();
   const description = String(payload.description ?? "").trim();
@@ -254,6 +243,12 @@ export function createServiceRecord(payload) {
   if (!serviceName || !displayName || !description || !defaultBranch) {
     throw new Error("Service name, display name, description, and default branch are required.");
   }
+  if (payload.domain !== undefined && typeof payload.domain !== "string") throw new Error("Service domain must be a title.");
+  const domainTitle = payload.domain?.trim() || displayName;
+  if (domainTitle.length > 150 || /[\u0000-\u001f\u007f]/.test(domainTitle)) {
+    throw new Error("Service domain must be at most 150 characters without control characters.");
+  }
+  const domain = slugify(domainTitle) || serviceName;
 
   const serviceGroupPatterns = String(payload.serviceGroupPatterns ?? "")
     .split(/[\r\n,]+/)
@@ -272,6 +267,7 @@ export function createServiceRecord(payload) {
       service: {
         name: serviceName,
         displayName,
+        domain: domainTitle,
         description,
         serviceType: payload.serviceType ?? "other",
         lifecycle: payload.lifecycle ?? "production",

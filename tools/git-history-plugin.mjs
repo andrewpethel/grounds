@@ -1,7 +1,6 @@
-import { spawn } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
-import process from "node:process";
+import { getAzureCliToken } from "./azure-user-auth.mjs";
 
 const azureDevOpsResource = "499b84ac-1321-427f-aa17-267ca6975798";
 const defaultDays = 365;
@@ -104,79 +103,7 @@ function loadCatalogRepositories(root) {
 }
 
 function getAzureDevOpsToken() {
-  return new Promise((resolve, reject) => {
-    const argumentsList = [
-      "account",
-      "get-access-token",
-      "--resource",
-      azureDevOpsResource,
-      "--query",
-      "accessToken",
-      "--output",
-      "tsv",
-    ];
-    const windowsAzureCli =
-      [
-        process.env["ProgramFiles(x86)"],
-        process.env.PROGRAMFILES,
-        "C:\\Program Files (x86)",
-      ]
-        .filter(Boolean)
-        .map((root) =>
-          path.join(
-            root,
-            "Microsoft",
-            "SDKs",
-            "Azure",
-            "CLI2",
-            "wbin",
-            "az.cmd",
-          ),
-        )
-        .find((candidate) => existsSync(candidate)) ?? "az.cmd";
-    const command = process.platform === "win32" ? windowsAzureCli : "az";
-    const child = spawn(command, argumentsList, {
-      shell: process.platform === "win32",
-      windowsHide: true,
-    });
-    let output = "";
-    let errorOutput = "";
-    const timeout = setTimeout(() => {
-      child.kill();
-      reject(new Error("Azure CLI authentication timed out."));
-    }, 60_000);
-
-    child.stdout.on("data", (chunk) => {
-      output += chunk;
-    });
-    child.stderr.on("data", (chunk) => {
-      errorOutput += chunk;
-    });
-    child.on("error", (error) => {
-      clearTimeout(timeout);
-      reject(
-        new Error(
-          error.code === "ENOENT"
-            ? "Azure CLI is not installed. Install it and run az login."
-            : error.message,
-        ),
-      );
-    });
-    child.on("close", (code) => {
-      clearTimeout(timeout);
-      const token = output.trim();
-      if (code === 0 && token) {
-        resolve(token);
-        return;
-      }
-      reject(
-        new Error(
-          errorOutput.trim() ||
-            "Azure CLI could not acquire an Azure DevOps token. Run az login and try again.",
-        ),
-      );
-    });
-  });
+  return getAzureCliToken(azureDevOpsResource);
 }
 
 async function fetchAzureDevOpsJson(url, token) {

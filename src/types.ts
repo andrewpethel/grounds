@@ -1,12 +1,9 @@
-export type ServiceDomain =
-  | "control-plane"
-  | "data-plane"
-  | "alerts-management"
-  | "aiops";
+export type ServiceDomain = `domain:${string}`;
 
 export interface ServiceIdentity {
   name: string;
   displayName: string;
+  domain?: string;
   description: string;
   serviceType:
     | "control-plane"
@@ -20,6 +17,10 @@ export interface ServiceIdentity {
   lifecycle: "development" | "preview" | "production" | "deprecated" | "retired";
   serviceTreeId?: string;
   serviceGroupPatterns?: string[];
+  deploymentMatching?: {
+    serviceGroupNames?: string[];
+    serviceGroupNameContains?: string[];
+  };
   resourceTypes?: string[];
   operationalImpactTier?: "critical" | "high" | "medium" | "low";
 }
@@ -68,6 +69,11 @@ export interface Repository {
   paths?: string[];
   checkoutStatus?: "available" | "not-enlisted" | "not-required" | "unknown";
   localPath?: string;
+  serviceTreeMapping?: {
+    source: "config" | "manual" | "manifest";
+    checkedAt: string;
+    evidence: Array<{ file: string; field: string }>;
+  };
 }
 
 export interface Pipeline {
@@ -301,6 +307,17 @@ export interface Ev2DeploymentObservation {
   sourceUrl: string;
 }
 
+export interface SrmServiceGroupStatus {
+  environment: string;
+  releaseCorrelationId: string;
+  releaseName: string;
+  releaseUrl: string;
+  serviceGroupName: string;
+  serviceTreeId: string;
+  status: string;
+  updatedAt: string;
+}
+
 export interface Ev2ServiceGroup {
   serviceGroupId: string;
   displayName: string;
@@ -342,6 +359,7 @@ export interface ServiceChatSession {
   title: string;
   createdAt: string;
   updatedAt: string;
+  readOnly?: boolean;
 }
 
 export interface ServiceChatSource {
@@ -351,6 +369,7 @@ export interface ServiceChatSource {
     | "troubleshooting"
     | "repository"
     | "deployment"
+    | "architecture"
     | "documentation";
   title: string;
   location: string;
@@ -365,6 +384,7 @@ export interface ServiceChatMessage {
   sources: ServiceChatSource[];
   provider?: string;
   createdAt: string;
+  context?: { environment?: string; releaseId?: string };
 }
 
 export interface AdoWorkItemResult {
@@ -372,4 +392,49 @@ export interface AdoWorkItemResult {
   title: string;
   type: string;
   url: string;
+}
+
+export type ArchitectureComponent = {
+  id: string;
+  label: string;
+  kind: "service" | "application" | "datastore" | "queue" | "external";
+  description: string;
+  evidenceSourceIds: number[];
+};
+
+export type ArchitectureRelationship = {
+  id: string;
+  source: string;
+  target: string;
+  label: string;
+  protocol?: string;
+  evidenceSourceIds: number[];
+};
+
+export interface ArchitectureFlow {
+  id: string;
+  schemaVersion: number;
+  serviceName: string;
+  status: "draft" | "reviewed";
+  generatedAt: string;
+  reviewedAt?: string;
+  catalogChanged?: boolean;
+  evidenceFingerprint: string;
+  codeEvidence: Array<{ path: string; line: number; excerpt: string; sourceId: number }>;
+  repositories: Array<{
+    name: string;
+    url: string;
+    sourcePaths: string[];
+    revision: string | null;
+    trackedChanges: boolean;
+    limitation?: string;
+  }>;
+  graph: {
+    title: string;
+    summary: string;
+    nodes: ArchitectureComponent[];
+    edges: ArchitectureRelationship[];
+    uncertainties: string[];
+  };
+  sources: ServiceChatSource[];
 }

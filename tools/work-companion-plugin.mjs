@@ -1,9 +1,8 @@
-import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import path from "node:path";
-import process from "node:process";
 import { isLocalRequest } from "./local-request.mjs";
+import { getAzureCliToken } from "./azure-user-auth.mjs";
 
 const azureDevOpsResource = "499b84ac-1321-427f-aa17-267ca6975798";
 const serviceNamePattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -129,86 +128,7 @@ function normalizeClassificationPath(value, label) {
 }
 
 function getAzureDevOpsToken() {
-  return new Promise((resolve, reject) => {
-    const azureCliArguments = [
-      "account",
-      "get-access-token",
-      "--resource",
-      azureDevOpsResource,
-      "--query",
-      "accessToken",
-      "--output",
-      "tsv",
-    ];
-    const windowsAzureCli =
-      [
-        process.env["ProgramFiles(x86)"],
-        process.env.PROGRAMFILES,
-        "C:\\Program Files (x86)",
-      ]
-        .filter(Boolean)
-        .map((root) =>
-          path.join(
-            root,
-            "Microsoft",
-            "SDKs",
-            "Azure",
-            "CLI2",
-            "wbin",
-            "az.cmd",
-          ),
-        )
-        .find((candidate) => existsSync(candidate)) ?? "az.cmd";
-    const command =
-      process.platform === "win32"
-        ? windowsAzureCli
-        : "az";
-    const child = spawn(
-      command,
-      azureCliArguments,
-      {
-        shell: process.platform === "win32",
-        windowsHide: true,
-      },
-    );
-    let output = "";
-    let errorOutput = "";
-    const timeout = setTimeout(() => {
-      child.kill();
-      reject(new Error("Azure CLI authentication timed out."));
-    }, 60_000);
-
-    child.stdout.on("data", (chunk) => {
-      output += chunk;
-    });
-    child.stderr.on("data", (chunk) => {
-      errorOutput += chunk;
-    });
-    child.on("error", (error) => {
-      clearTimeout(timeout);
-      reject(
-        new Error(
-          error.code === "ENOENT"
-            ? "Azure CLI is not installed. Install it and run az login."
-            : error.message,
-        ),
-      );
-    });
-    child.on("close", (code) => {
-      clearTimeout(timeout);
-      const token = output.trim();
-      if (code === 0 && token) {
-        resolve(token);
-        return;
-      }
-      reject(
-        new Error(
-          errorOutput.trim() ||
-            "Azure CLI could not acquire an Azure DevOps token. Run az login and try again.",
-        ),
-      );
-    });
-  });
+  return getAzureCliToken(azureDevOpsResource);
 }
 
 async function getAuthenticatedAzureDevOpsIdentity(target, token) {
@@ -531,15 +451,21 @@ function initializeDatabase(root, DatabaseSync) {
 export function workCompanionPlugin() {
   let database;
 
+  function closeDatabase() {
+    database?.close();
+    database = undefined;
+  }
+
   return {
     name: "grounds-work-companion",
     apply: "serve",
+    closeBundle: closeDatabase,
     async configResolved(config) {
       const { DatabaseSync } = await import("node:sqlite");
       database = initializeDatabase(config.root, DatabaseSync);
     },
     configureServer(server) {
-      server.httpServer?.once("close", () => database?.close());
+      server.httpServer?.once("close", closeDatabase);
       server.middlewares.use(async (request, response, next) => {
         const requestUrl = new URL(request.url ?? "/", "http://grounds.local");
         if (!requestUrl.pathname.startsWith("/__grounds/work/")) {

@@ -1,4 +1,6 @@
 import {
+  lazy,
+  Suspense,
   useEffect,
   useMemo,
   useRef,
@@ -8,9 +10,12 @@ import {
 } from "react";
 import {
   ev2ServiceGroups,
+  domainLabel,
+  getServiceDomains,
   serviceByName,
   services,
   serviceValidationByPath,
+  manifestPipelineErrors,
   srmObservations,
   teamsIntelligence,
 } from "./data";
@@ -22,13 +27,16 @@ import {
 import { GitHistoryPage } from "./GitHistoryPage";
 import { LocalReposPage } from "./LocalReposPage";
 import { DailyReportPage } from "./DailyReportPage";
-import { FlowsPage } from "./FlowsPage";
+import { ManifestPipelinesEditor } from "./ManifestPipelinesEditor";
+import { PipelineResolutionControls, UnverifiedPipelineReferences, usePipelineDiscovery } from "./PipelineDiscovery";
 import { WorkItemsPage } from "./WorkItemsPage";
 import { WorkDrawer } from "./WorkDrawer";
 import { NotesPage } from "./NotesPage";
 import { ServiceChatPage } from "./ServiceChatPage";
+import { DesktopOnboarding } from "./DesktopOnboarding";
 import { vscodeFileUri } from "./links";
 import { readBrowserCache, writeBrowserCache } from "./browserCache";
+import { buildSrmServiceGroups, deploymentSelectorsMatch } from "../tools/deployment-matching.mjs";
 import type {
   CatalogService,
   Dependency,
@@ -39,21 +47,11 @@ import type {
   ResourceLink,
   ServiceDomain,
   ServiceValidation,
+  SrmServiceGroupStatus,
 } from "./types";
 
-const domainLabels: Record<ServiceDomain, string> = {
-  "control-plane": "Control plane",
-  "data-plane": "Data plane",
-  "alerts-management": "Alerts management",
-  aiops: "AIOps",
-};
-
-const domainOrder: ServiceDomain[] = [
-  "control-plane",
-  "data-plane",
-  "alerts-management",
-  "aiops",
-];
+const ServiceArchitecturePage = lazy(() => import("./ServiceArchitecturePage")
+  .then((module) => ({ default: module.ServiceArchitecturePage })));
 
 function formatEnvironmentLabel(cloud: string) {
   if (cloud === "ussec") return "USSec";
@@ -149,7 +147,6 @@ type AppPage =
   | "git-history"
   | "local-repos"
   | "daily-report"
-  | "flows"
   | "work-items"
   | "deployment-diffs"
   | "domain-deployments"
@@ -390,13 +387,13 @@ function initialTextSize(): TextSize {
   return stored === "1" || stored === "2" ? Number(stored) as TextSize : 0;
 }
 
-function initialColorMode(): ColorMode {
-  return window.localStorage.getItem("grounds-color-mode") === "light"
-    ? "light"
-    : "dark";
+export function initialColorMode(): ColorMode {
+  return window.localStorage.getItem("grounds-color-mode") === "dark"
+    ? "dark"
+    : "light";
 }
 
-function initialHighContrast() {
+export function initialHighContrast() {
   return window.localStorage.getItem("grounds-high-contrast") === "true";
 }
 
@@ -586,13 +583,6 @@ function Icon({
     </svg>
   );
 }
-
-const domainIcons: Record<ServiceDomain, IconName> = {
-  "control-plane": "control",
-  "data-plane": "activity",
-  "alerts-management": "bell",
-  aiops: "sparkles",
-};
 
 function About() {
   return (
@@ -820,8 +810,40 @@ const docsTopics: Array<{
     ),
   },
   {
+    id: "service-architecture",
+    eyebrow: "On-demand service knowledge",
+    title: "Architecture flows",
+    searchText: "architecture flow Copilot system overview diagram evidence review troubleshooting",
+    content: (
+      <>
+        <p>
+          Open a service and choose <strong>Create Flow</strong> to open its
+          architecture workspace. Connect GitHub Copilot through{" "}
+          <strong>Troubleshoot</strong>, then explicitly choose{" "}
+          <strong>Create Flow</strong> in the workspace. Opening services,
+          onboarding, and reopening saved diagrams never generate architecture.
+        </p>
+        <p>
+          The logical system overview uses bounded tracked-file evidence within
+          cataloged repository paths, declared dependencies, and operational
+          knowledge. Select labeled components or directional relationships to
+          inspect their citations. Uncertainties remain explicit; this is not a
+          network-placement diagram or verified live topology.
+        </p>
+        <p>
+          Flows are saved locally per service and connected operator and reused
+          by that service&apos;s troubleshooter. <strong>Mark reviewed</strong>{" "}
+          records operator review, not independent verification. Repository
+          changes are not monitored; regenerate after source changes. Failed or
+          cancelled generation preserves the previous flow. Only one Copilot
+          task runs at a time, and service artifacts remain read-only.
+        </p>
+      </>
+    ),
+  },
+  {
     id: "service-groups",
-    eyebrow: "EV2",
+    eyebrow: "SRM and EV2",
     title: "Service Groups",
     searchText:
       "EV2 Service Groups discovery ownership repository associations hidden groups environments SRM stages",
@@ -829,17 +851,17 @@ const docsTopics: Array<{
       <>
         <p>
           A Service Tree can contain several independently deployable EV2 Service
-          Groups. Grounds discovers those groups from EV2 and uses repository
-          deployment configuration to associate a group with a catalog service.
-          These associations are internal organization metadata, not deployment
-          health, so Grounds does not display mapping-status badges on operator
-          cards.
+          Groups. Grounds builds the visible list from SRM, using optional EV2
+          metadata for enrichment. An EV2 snapshot or portal link is not required.
+          Deployment selectors and explicit associations can establish ownership;
+          a shared Service Tree alone cannot.
         </p>
         <p>
           A group without repository evidence is still available for deployment
           searches and note tags. Grounds simply avoids guessing which catalog
-          service owns it. Hidden groups are a per-browser display preference and
-          do not delete EV2 observations.
+          service owns it. These records are labeled as unattributed, including
+          in single-service views. Hidden groups are a per-browser display
+          preference and do not delete SRM or EV2 observations.
         </p>
         <p>
           Grounds automatically queries the authenticated SRM Kusto database when
@@ -848,6 +870,12 @@ const docsTopics: Array<{
           captured release-stage evidence. No chip means neither source currently
           contains a status for that environment; it does not mean the Service
           Group cannot deploy there.
+        </p>
+        <p>
+          Deployment views open on All current, so completed and failed records
+          remain visible. Browser-cached SRM results are reused for at most five
+          minutes when opening a view; Refresh deployment status bypasses the
+          server cache as well.
         </p>
       </>
     ),
@@ -1243,6 +1271,7 @@ function getSrmServiceGroupOptions(service: CatalogService) {
             service.service.serviceTreeId?.toLowerCase(),
         )
         .flatMap((observation) => observation.serviceGroups)
+        .filter((group) => deploymentSelectorsMatch(service.service, group.serviceGroupId) !== false)
         .map((group) => [group.serviceGroupId, group]),
     ).values(),
   ].sort((left, right) => left.displayName.localeCompare(right.displayName));
@@ -1256,6 +1285,7 @@ function initialServiceName() {
 function initialServiceView() {
   if (window.location.hash.endsWith("/deployments")) return "deployments" as const;
   if (window.location.hash.endsWith("/troubleshoot")) return "troubleshoot" as const;
+  if (window.location.hash.endsWith("/flow")) return "flow" as const;
   return "overview" as const;
 }
 
@@ -1264,7 +1294,6 @@ function initialPage(): AppPage {
   if (window.location.hash === "#/git-history") return "git-history";
   if (window.location.hash === "#/local-repos") return "local-repos";
   if (window.location.hash === "#/daily-report") return "daily-report";
-  if (window.location.hash === "#/flows") return "flows";
   if (window.location.hash === "#/work-items") return "work-items";
   if (window.location.hash === "#/deployment-diffs") return "deployment-diffs";
   if (/^#\/domain\/[^/]+\/deployments$/.test(window.location.hash)) {
@@ -1280,9 +1309,9 @@ function initialDeploymentDomain(): ServiceDomain {
   const domain = window.location.hash.match(
     /^#\/domain\/([^/]+)\/deployments$/,
   )?.[1];
-  return domainOrder.includes(domain as ServiceDomain)
-    ? (domain as ServiceDomain)
-    : "control-plane";
+  const domains = getServiceDomains();
+  return domains.find((candidate) => encodeURIComponent(candidate) === domain)
+    ?? domains[0] ?? "domain:Services";
 }
 
 function AppHeader({
@@ -1361,7 +1390,6 @@ function Sidebar({
   onGitHistory,
   onLocalRepos,
   onDailyReport,
-  onFlows,
   onWorkItems,
   onNotes,
   onOverview,
@@ -1379,7 +1407,6 @@ function Sidebar({
   onGitHistory: () => void;
   onLocalRepos: () => void;
   onDailyReport: () => void;
-  onFlows: () => void;
   onWorkItems: () => void;
   onNotes: () => void;
   onOverview: () => void;
@@ -1419,11 +1446,11 @@ function Sidebar({
           <span className="nav-count">{services.length}</span>
         </button>
         <p className="nav-label">Service domains</p>
-        {domainOrder.map((domain) => {
+        {getServiceDomains().map((domain) => {
           const count = services.filter((service) => service.domain === domain).length;
           return (
             <button
-              aria-label={domainLabels[domain]}
+              aria-label={domainLabel(domain)}
               className={`nav-item ${
                 activePage === "catalog" && activeDomain === domain ? "active" : ""
               }`}
@@ -1433,21 +1460,13 @@ function Sidebar({
                 onOverview();
               }}
             >
-              <Icon className={`domain-icon ${domain}`} name={domainIcons[domain]} />
-              <span>{domainLabels[domain]}</span>
+              <Icon className="domain-icon" name="service" />
+              <span>{domainLabel(domain)}</span>
               <span className="nav-count">{count}</span>
             </button>
           );
         })}
         <p className="nav-label">Grounds</p>
-        <button
-          aria-label="Flows"
-          className={`nav-item ${activePage === "flows" ? "active" : ""}`}
-          onClick={onFlows}
-        >
-          <Icon name="pipeline" />
-          <span>Flows</span>
-        </button>
         <button
           aria-label="Notes"
           className={`nav-item ${activePage === "notes" ? "active" : ""}`}
@@ -1564,15 +1583,53 @@ function StatCard({
   );
 }
 
+function ServiceDomainEditor({ service }: { service: CatalogService }) {
+  const [domain, setDomain] = useState(service.service.domain ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  async function save(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch("/__grounds/service-domain", {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sourcePath: service.sourcePath, domain, previousDomain: service.service.domain ?? null,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "Could not save the service domain.");
+      window.location.reload();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : String(error));
+      setBusy(false);
+    }
+  }
+  return <details className="service-domain-editor">
+    <summary>Edit service domain</summary>
+    <form onSubmit={save}>
+      <label>Service domain<input disabled={busy} value={domain} maxLength={150}
+        placeholder={service.service.displayName} list="service-domain-titles"
+        onChange={(event) => setDomain(event.target.value)} /></label>
+      <datalist id="service-domain-titles">{getServiceDomains().map((value) =>
+        <option key={value} value={domainLabel(value)} />)}</datalist>
+      <p>Use the same title to group services. Clear it to use this service&apos;s display name. Changes are saved to this workspace, not the repository manifest.</p>
+      {error && <p role="alert">{error}</p>}
+      <button disabled={busy} type="submit">{busy ? "Saving..." : "Save domain"}</button>
+    </form>
+  </details>;
+}
+
 function ServiceOnboardingDialog({ onClose }: { onClose: () => void }) {
   const [repositoryUrl, setRepositoryUrl] = useState("");
   const [analysis, setAnalysis] = useState<RepositoryOnboardingAnalysis>();
-  const [domain, setDomain] = useState<ServiceDomain>("control-plane");
+  const [domain, setDomain] = useState("");
   const [serviceName, setServiceName] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [description, setDescription] = useState("");
   const [defaultBranch, setDefaultBranch] = useState("");
-  const [serviceType, setServiceType] = useState("control-plane");
+  const [serviceType, setServiceType] = useState("other");
   const [lifecycle, setLifecycle] = useState("production");
   const [serviceTreeId, setServiceTreeId] = useState("");
   const [serviceGroupPatterns, setServiceGroupPatterns] = useState("");
@@ -1604,6 +1661,7 @@ function ServiceOnboardingDialog({ onClose }: { onClose: () => void }) {
       setRepositoryUrl(next.canonicalUrl);
       setServiceName(next.serviceName);
       setDisplayName(next.displayName);
+      setDomain(next.displayName);
       setDescription(next.description);
       setDefaultBranch(next.defaultBranch);
     } catch (nextError) {
@@ -1720,20 +1778,13 @@ function ServiceOnboardingDialog({ onClose }: { onClose: () => void }) {
             <div className="service-onboarding-fields">
               <label>
                 Service domain
-                <select
-                  onChange={(event) => {
-                    const nextDomain = event.target.value as ServiceDomain;
-                    setDomain(nextDomain);
-                    setServiceType(
-                      nextDomain === "alerts-management" ? "management" : nextDomain,
-                    );
-                  }}
-                  value={domain}
-                >
-                  {domainOrder.map((candidate) => (
-                    <option key={candidate} value={candidate}>{domainLabels[candidate]}</option>
+                <input list="onboarding-domain-titles" maxLength={150} required
+                  onChange={(event) => setDomain(event.target.value)} value={domain} />
+                <datalist id="onboarding-domain-titles">
+                  {getServiceDomains().map((candidate) => (
+                    <option key={candidate} value={domainLabel(candidate)} />
                   ))}
-                </select>
+                </datalist>
               </label>
               <label>
                 Service type
@@ -1828,23 +1879,21 @@ function ServiceCard({
         type="button"
       >
         <div className="service-card-top">
-        <span className={`service-glyph ${service.domain}`}>
+        <span className={`service-glyph ${service.service.serviceType}`}>
           <Icon
             name={
-              service.domain === "control-plane"
+              service.service.serviceType === "control-plane"
                 ? "layers"
-                : service.domain === "data-plane"
+                : service.service.serviceType === "data-plane"
                   ? "database"
-                  : service.domain === "aiops"
-                    ? "cloud"
-                    : "service"
+                  : "service"
             }
             size={20}
           />
         </span>
         </div>
         <div className="service-card-labels">
-          <span className="service-domain">{domainLabels[service.domain]}</span>
+          <span className="service-domain">{domainLabel(service.domain)}</span>
           {!isLocallyEnlisted && (
             <span className="service-enlistment-chip">
               <span />
@@ -1965,7 +2014,7 @@ function Overview({
           </section>
 
           <section className="stats-grid" aria-label="Catalog summary">
-            <StatCard icon="service" label="Services" value={services.length} detail="Across 4 domains" />
+            <StatCard icon="service" label="Services" value={services.length} detail={`Across ${new Set(services.map((service) => service.domain)).size} groups`} />
             <StatCard
               icon="code"
               label="Repositories"
@@ -1988,7 +2037,7 @@ function Overview({
           <div>
             <span className="eyebrow">Service catalog</span>
             <h2>
-              {activeDomain === "all" ? "All services" : domainLabels[activeDomain]}
+              {activeDomain === "all" ? "All services" : domainLabel(activeDomain)}
             </h2>
           </div>
           <div className="catalog-heading-actions">
@@ -2032,7 +2081,9 @@ function Overview({
         )}
       </section>
       {isOnboardingOpen && (
-        <ServiceOnboardingDialog onClose={() => setIsOnboardingOpen(false)} />
+        window.groundsDesktop
+          ? <DesktopOnboarding onClose={() => setIsOnboardingOpen(false)} />
+          : <ServiceOnboardingDialog onClose={() => setIsOnboardingOpen(false)} />
       )}
     </main>
   );
@@ -2157,6 +2208,7 @@ function PipelineCard({
   pipeline: Pipeline;
   stage: "Build" | "Release";
 }) {
+  const sourceReference = /\/_git\/|github\.com\/[^/]+\/[^/]+\/(?:blob|tree)\//.test(pipeline.url);
   return (
     <article className="resource-card pipeline-card">
       <div className="resource-card-header">
@@ -2166,6 +2218,7 @@ function PipelineCard({
           <ExternalLink href={pipeline.url}>{pipeline.name}</ExternalLink>
         </div>
       </div>
+      {sourceReference && <p>Source reference, not live run status.</p>}
       {pipeline.pipelineFile && (
         <code className="file-path">{pipeline.pipelineFile}</code>
       )}
@@ -2330,7 +2383,7 @@ const serviceGroupDescriptions: Record<string, string> = {
 function describeServiceGroup(serviceGroupId: string) {
   return (
     serviceGroupDescriptions[serviceGroupId] ??
-    "Deploys an independently managed EV2 unit beneath this service's Service Tree."
+    "An independently deployable unit observed in SRM. A shared Service Tree does not establish service ownership."
   );
 }
 
@@ -2353,22 +2406,14 @@ function ServiceGroupsSection({
 }) {
   const cachedSrmStatus = readBrowserCache<{
     generatedAt?: string;
-    serviceGroups?: Array<{
-      environment: string;
-      releaseCorrelationId: string;
-      releaseName: string;
-      releaseUrl: string;
-      serviceGroupName: string;
-      serviceTreeId: string;
-      status: string;
-      updatedAt: string;
-    }>;
-  }>("srm-release-status");
+    serviceGroups?: SrmServiceGroupStatus[];
+  }>("srm-release-status", 5 * 60 * 1000);
   const cachedServiceStatuses = (cachedSrmStatus?.value.serviceGroups ?? [])
     .filter(
       (status) =>
         status.serviceTreeId.toLowerCase() ===
-        service.service.serviceTreeId?.toLowerCase(),
+        service.service.serviceTreeId?.toLowerCase() &&
+        deploymentSelectorsMatch(service.service, status.serviceGroupName) !== false,
     );
   const [selectedGroups, setSelectedGroups] = useState<Record<string, string>>(
     {},
@@ -2378,25 +2423,12 @@ function ServiceGroupsSection({
   >({});
   const [refreshingCloud, setRefreshingCloud] = useState<string>();
   const [refreshError, setRefreshError] = useState("");
-  const [liveSrmStatuses, setLiveSrmStatuses] = useState<
-    Array<{
-      environment: string;
-      releaseCorrelationId: string;
-      releaseName: string;
-      releaseUrl: string;
-      serviceGroupName: string;
-      status: string;
-      updatedAt: string;
-    }>
-  >(cachedServiceStatuses);
-  const [liveSrmLoading, setLiveSrmLoading] = useState(
-    cachedServiceStatuses.length === 0,
-  );
+  const [liveSrmStatuses, setLiveSrmStatuses] =
+    useState<SrmServiceGroupStatus[]>(cachedServiceStatuses);
+  const [liveSrmLoading, setLiveSrmLoading] = useState(!cachedSrmStatus);
   const [liveSrmError, setLiveSrmError] = useState("");
   const [liveSrmGeneratedAt, setLiveSrmGeneratedAt] = useState(
-    cachedServiceStatuses.length > 0
-      ? (cachedSrmStatus?.value.generatedAt ?? "")
-      : "",
+    cachedSrmStatus?.value.generatedAt ?? "",
   );
   const [hiddenServiceGroups, setHiddenServiceGroups] = useState<string[]>(
     initialHiddenServiceGroups,
@@ -2404,34 +2436,42 @@ function ServiceGroupsSection({
   const reachablePortalLinks = portalLinks.filter(
     (portal) => portal.cloud === "public",
   );
+  const groupViews = reachablePortalLinks.length > 0
+    ? reachablePortalLinks
+    : [{ cloud: "srm", label: "SRM service groups", network: "Observed environments", url: "", serviceGroupsUrl: "" }];
   const observations = ev2ServiceGroups.observations.filter(
     (observation) =>
       observation.cloud === "public" &&
       observation.serviceTreeId.toLowerCase() ===
       service.service.serviceTreeId?.toLowerCase(),
   );
+  const discoveredGroups = buildSrmServiceGroups(
+    services.map((entry) => entry.service),
+    service.service,
+    liveSrmStatuses,
+    observations,
+  );
   const hiddenServiceGroupSet = new Set(hiddenServiceGroups);
   const groupPreferenceKey = (cloud: string, serviceGroupId: string) =>
     `${service.service.name}:${cloud}:${serviceGroupId}`;
-  const hiddenGroups = observations.flatMap((observation) =>
-    observation.serviceGroups
+  const hiddenGroups = groupViews.flatMap((view) =>
+    discoveredGroups
       .filter((group) =>
         hiddenServiceGroupSet.has(
-          groupPreferenceKey(observation.cloud, group.serviceGroupId),
+          groupPreferenceKey(view.cloud, group.serviceGroupId),
         ),
       )
       .map((group) => ({
-        cloud: observation.cloud,
+        cloud: view.cloud,
         group,
       })),
   );
-  const totalGroups = observations.reduce(
-    (total, observation) =>
-      total +
-      observation.serviceGroups.filter(
+  const totalGroups = groupViews.reduce(
+    (total, view) =>
+      total + discoveredGroups.filter(
         (group) =>
           !hiddenServiceGroupSet.has(
-            groupPreferenceKey(observation.cloud, group.serviceGroupId),
+            groupPreferenceKey(view.cloud, group.serviceGroupId),
           ),
       ).length,
     0,
@@ -2470,16 +2510,7 @@ function ServiceGroupsSection({
       const result = (await response.json()) as {
         error?: string;
         generatedAt?: string;
-        serviceGroups?: Array<{
-          environment: string;
-          releaseCorrelationId: string;
-          releaseName: string;
-          releaseUrl: string;
-          serviceGroupName: string;
-          serviceTreeId: string;
-          status: string;
-          updatedAt: string;
-        }>;
+        serviceGroups?: SrmServiceGroupStatus[];
       };
       if (!response.ok) {
         throw new Error(result.error ?? "Live SRM status is unavailable.");
@@ -2488,7 +2519,8 @@ function ServiceGroupsSection({
         (result.serviceGroups ?? []).filter(
           (status) =>
             status.serviceTreeId.toLowerCase() ===
-            serviceTreeId.toLowerCase(),
+            serviceTreeId.toLowerCase() &&
+            deploymentSelectorsMatch(service.service, status.serviceGroupName) !== false,
         ),
       );
       setLiveSrmGeneratedAt(result.generatedAt ?? new Date().toISOString());
@@ -2506,7 +2538,7 @@ function ServiceGroupsSection({
   }
 
   useEffect(() => {
-    if (cachedServiceStatuses.length > 0 && cachedSrmStatus) {
+    if (cachedSrmStatus) {
       setLiveSrmStatuses(cachedServiceStatuses);
       setLiveSrmGeneratedAt(cachedSrmStatus.value.generatedAt ?? "");
       setLiveSrmLoading(false);
@@ -2517,7 +2549,7 @@ function ServiceGroupsSection({
     return () => {
       controller.abort();
     };
-  }, [service.service.serviceTreeId]);
+  }, [service.service.name, service.service.serviceTreeId]);
 
   function hideServiceGroup(cloud: string, serviceGroupId: string) {
     const key = groupPreferenceKey(cloud, serviceGroupId);
@@ -2539,19 +2571,6 @@ function ServiceGroupsSection({
     setHiddenServiceGroups((current) =>
       current.filter((key) => !key.startsWith(servicePrefix)),
     );
-  }
-
-  function relationshipRank(
-    group: (typeof observations)[number]["serviceGroups"][number],
-  ) {
-    if (
-      group.associations.some(
-        (association) => association.serviceName === service.service.name,
-      )
-    ) {
-      return 0;
-    }
-    return group.associations.length === 0 ? 1 : 2;
   }
 
   async function getServiceGroups(cloud: string) {
@@ -2583,7 +2602,7 @@ function ServiceGroupsSection({
   }
 
   return (
-    <Section icon="layers" title="EV2 service groups" count={totalGroups}>
+    <Section icon="layers" title="Service groups" count={totalGroups}>
       <div className="service-group-operator-buttons">
         <button
           className="operator-portal-button"
@@ -2611,7 +2630,7 @@ function ServiceGroupsSection({
             href={reachablePortalLinks[0].url}
             rel="noreferrer"
             target="_blank"
-            title="Open this service in Public EV2"
+            title="Open this Service Tree in Public EV2"
           >
             EV2
             <Icon name="external" size={14} />
@@ -2631,17 +2650,24 @@ function ServiceGroupsSection({
         <div>
           <strong>Deployment granulation</strong>
           <p>
-            Service groups identify independently deployable units beneath this
-            Service Tree. Select a group to focus its infrastructure and deployment
-            history.
+            SRM supplies the current service groups and deployment status.
+            EV2 enriches those groups when metadata is available; an EV2 snapshot
+            is not required. Select a group to focus its deployment history.
           </p>
           <a href="#/docs/service-groups">More info about Service Groups</a>
         </div>
         <span className="service-group-intro-note">
-          Public EV2 is shown on low-side. USSec and USNat service groups are
-          intentionally hidden because those portals require air-gapped access.
+          EV2 enrichment is limited to Public on low-side. USSec and USNat
+          EV2 portals require air-gapped access.
         </span>
       </div>
+      {deploymentSelectorsMatch(service.service, "") === undefined && (
+        <p role="status">Service Tree scope - not narrowed to this service. These groups may belong to other operator-facing services.</p>
+      )}
+      {deploymentSelectorsMatch(service.service, "") !== undefined && !liveSrmLoading &&
+        !liveSrmError && discoveredGroups.length === 0 && (
+        <p role="status">No SRM service groups match this service's deployment selectors. No Service Tree fallback was applied.</p>
+      )}
       {refreshError && (
         <div className="service-group-refresh-error" role="alert">
           {refreshError}
@@ -2653,35 +2679,19 @@ function ServiceGroupsSection({
         </div>
       )}
       <div className="service-group-clouds">
-        {reachablePortalLinks.map((portal) => {
+        {groupViews.map((portal) => {
           const observation = observations.find(
             (candidate) => candidate.cloud === portal.cloud,
           );
-          const discoveredGroups = [...(observation?.serviceGroups ?? [])].sort(
-              (left, right) =>
-                relationshipRank(left) - relationshipRank(right) ||
-                left.displayName.localeCompare(right.displayName),
-            );
           const allGroups = discoveredGroups.filter(
             (group) =>
               !hiddenServiceGroupSet.has(
                 groupPreferenceKey(portal.cloud, group.serviceGroupId),
               ),
           );
-          const associatedGroups = allGroups.filter((group) =>
-            group.associations.some(
-              (association) => association.serviceName === service.service.name,
-            ),
-          );
-          const hasOperatorSelection = Object.prototype.hasOwnProperty.call(
-            selectedGroups,
-            portal.cloud,
-          );
-          const selectedGroupId = hasOperatorSelection
-            ? selectedGroups[portal.cloud]
-            : associatedGroups.length === 1
-              ? associatedGroups[0].serviceGroupId
-              : "";
+          const selectedGroupId = allGroups.some(
+            (group) => group.serviceGroupId === selectedGroups[portal.cloud],
+          ) ? selectedGroups[portal.cloud] : "";
           const serviceGroupQuery =
             serviceGroupQueries[portal.cloud]?.trim().toLocaleLowerCase() ?? "";
           const groups = selectedGroupId
@@ -2708,39 +2718,44 @@ function ServiceGroupsSection({
             allGroups.length >= serviceGroupSearchThreshold ||
             Boolean(serviceGroupQuery);
           const isRefreshing = refreshingCloud === portal.cloud;
-          const showDiscoverySkeleton = isRefreshing && !observation;
+          const showDiscoverySkeleton =
+            (liveSrmLoading || isRefreshing) && discoveredGroups.length === 0;
 
           return (
             <article
-              aria-busy={isRefreshing}
+              aria-busy={liveSrmLoading || isRefreshing}
               className={`service-group-cloud ${showDiscoverySkeleton ? "loading" : ""}`}
               key={portal.cloud}
             >
               <div className="service-group-cloud-header">
                 <div>
-                  <span>{portal.network}</span>
-                  <h3>{portal.label}</h3>
+                  <span>SRM deployment inventory</span>
+                  <h3>Current service groups</h3>
                 </div>
                 <div>
-                  <button
-                    className="service-group-refresh"
-                    disabled={refreshingCloud !== undefined}
-                    onClick={() => getServiceGroups(portal.cloud)}
-                    type="button"
-                  >
-                    <Icon name="refresh" size={13} />
-                    {refreshingCloud === portal.cloud
-                      ? "Getting groups..."
-                      : "Get Service Groups"}
-                  </button>
-                  <a
-                    href={observation?.sourceUrl ?? portal.serviceGroupsUrl}
-                    rel="noreferrer"
-                    target="_blank"
-                  >
-                    Open in EV2
-                    <Icon name="external" size={13} />
-                  </a>
+                  {portal.serviceGroupsUrl && (
+                    <>
+                      <button
+                        className="service-group-refresh"
+                        disabled={refreshingCloud !== undefined}
+                        onClick={() => getServiceGroups(portal.cloud)}
+                        type="button"
+                      >
+                        <Icon name="refresh" size={13} />
+                        {refreshingCloud === portal.cloud
+                          ? "Getting metadata..."
+                          : "Enrich from EV2"}
+                      </button>
+                      <a
+                        href={observation?.sourceUrl ?? portal.serviceGroupsUrl}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        Open in EV2
+                        <Icon name="external" size={13} />
+                      </a>
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -2751,7 +2766,7 @@ function ServiceGroupsSection({
                   role="status"
                 >
                   <span className="visually-hidden">
-                    Loading EV2 service groups
+                    Loading SRM service groups
                   </span>
                   <span className="skeleton-block skeleton-control" />
                   <div className="service-group-skeleton-grid">
@@ -2762,7 +2777,7 @@ function ServiceGroupsSection({
                 </div>
               )}
 
-              {observation && (
+              {discoveredGroups.length > 0 && (
                 <div className="service-group-controls">
                   <label>
                     <span>Service group</span>
@@ -2795,7 +2810,7 @@ function ServiceGroupsSection({
                       <div className="service-group-search">
                         <Icon name="search" size={13} />
                         <input
-                          aria-label={`Search ${portal.label} service groups`}
+                          aria-label="Search SRM service groups"
                           onChange={(event) => {
                             setServiceGroupQueries((current) => ({
                               ...current,
@@ -2850,28 +2865,25 @@ function ServiceGroupsSection({
                       </div>
                     </details>
                   )}
-                  <span>
-                    Observed{" "}
+                  {observation && <span>
+                    EV2 metadata observed{" "}
                     {new Intl.DateTimeFormat("en-US", {
                       dateStyle: "medium",
                       timeStyle: "short",
                     }).format(new Date(observation.observedAt))}
-                  </span>
+                  </span>}
                 </div>
               )}
 
-              {!observation ? (
-                <div className="service-group-empty">
-                  No service-group snapshot has been collected for this cloud.
-                  Open EV2 to inspect the current groups.
-                </div>
-              ) : groups.length === 0 ? (
+              {groups.length === 0 && !showDiscoverySkeleton ? (
                 <div className="service-group-empty">
                   {serviceGroupQuery
                     ? `No service groups match "${serviceGroupQueries[portal.cloud]?.trim()}".`
                     : discoveredGroups.length > 0
                       ? "All discovered service groups are hidden on this service page."
-                      : "EV2 returned no service groups for this Service Tree."}
+                      : liveSrmError
+                        ? "Service groups are unavailable until SRM status can be loaded."
+                        : "SRM returned no current service groups for this scope."}
                 </div>
               ) : (
                 <div className="service-group-list">
@@ -2883,9 +2895,6 @@ function ServiceGroupsSection({
                     const liveStatusesForGroup = liveSrmStatuses.filter(
                       (status) =>
                         status.serviceGroupName === group.serviceGroupId,
-                    );
-                    const capturedReleaseIds = new Set(
-                      releases.map((release) => release.releaseId),
                     );
                     const observedEnvironments = [
                       ...new Set(
@@ -2901,10 +2910,7 @@ function ServiceGroupsSection({
                         ],
                       ),
                     ];
-                    const liveStatuses = liveStatusesForGroup.filter(
-                      (status) =>
-                        !capturedReleaseIds.has(status.releaseCorrelationId),
-                    ).sort((left, right) => {
+                    const liveStatuses = [...liveStatusesForGroup].sort((left, right) => {
                       const activeDifference =
                         Number(isActiveSrmStatus(right.status)) -
                         Number(isActiveSrmStatus(left.status));
@@ -3015,12 +3021,17 @@ function ServiceGroupsSection({
                             <p className="service-group-description">
                               {describeServiceGroup(group.serviceGroupId)}
                             </p>
+                            {!group.owner && (
+                              <p role="status">
+                                Unattributed Service Tree scope - ownership is not established.
+                              </p>
+                            )}
                             {observedEnvironments.length > 0 && (
                               <div className="service-group-environments">
                                 {observedEnvironments.map((environment) => (
                                   <span
                                     key={environment}
-                                    title="Environment observed in pinned SRM deployment data"
+                                    title="Environment observed in SRM deployment data"
                                   >
                                     {formatEnvironmentLabel(environment)}
                                   </span>
@@ -3131,6 +3142,7 @@ function ServiceGroupsSection({
                                 <span>
                                   <strong>{deployment.displayName}</strong>
                                   <small>
+                                    EV2 snapshot ·{" "}
                                     {deployment.buildVersion
                                       ? `Build ${deployment.buildVersion}`
                                       : deployment.deploymentId}
@@ -3163,7 +3175,7 @@ function ServiceGroupsSection({
                           rel="noreferrer"
                           target="_blank"
                         >
-                          View service group
+                          {group.enriched ? "View service group in EV2" : "Open in SRM"}
                           <Icon name="external" size={13} />
                         </a>
                       </div>
@@ -3184,15 +3196,20 @@ function ServiceDetail({
   onBack,
   onNavigate,
   onTroubleshoot,
+  onFlow,
 }: {
   service: CatalogService;
   onBack: () => void;
   onNavigate: (service: CatalogService) => void;
   onTroubleshoot: () => void;
+  onFlow: () => void;
 }) {
+  const pipelineDiscovery = usePipelineDiscovery();
+  const manifestBacked = Boolean(window.groundsDesktop && service.repositories.some((repository) => repository.serviceTreeMapping?.source === "manifest"));
+  const selectedPipelines = manifestBacked ? pipelineDiscovery?.state.services[service.service.name]?.pipelines ?? { build: [], release: [] } : service.pipelines;
   const pipelines = [
-    ...service.pipelines.build.map((pipeline) => ({ pipeline, stage: "Build" as const })),
-    ...service.pipelines.release.map((pipeline) => ({ pipeline, stage: "Release" as const })),
+    ...selectedPipelines.build.map((pipeline) => ({ pipeline, stage: "Build" as const })),
+    ...selectedPipelines.release.map((pipeline) => ({ pipeline, stage: "Release" as const })),
   ];
   const links = [
     ...service.documentation,
@@ -3385,6 +3402,10 @@ function ServiceDetail({
           Back to catalog
         </button>
         <div className="detail-action-group">
+          <button className="json-view-button" onClick={onFlow}>
+            <Icon name="pipeline" size={16} />
+            Create Flow
+          </button>
           <button className="json-view-button troubleshoot-button" onClick={onTroubleshoot}>
             <Icon name="sparkles" size={16} />
             Troubleshoot
@@ -3401,15 +3422,16 @@ function ServiceDetail({
       </div>
       <section className="detail-hero">
         <div className="detail-title-row">
-          <span className={`service-glyph large ${service.domain}`}>
+          <span className={`service-glyph large ${service.service.serviceType}`}>
             <Icon name="service" size={26} />
           </span>
           <div>
-            <span className="eyebrow">{domainLabels[service.domain]}</span>
+            <span className="eyebrow">{domainLabel(service.domain)}</span>
             <h1>{service.service.displayName}</h1>
           </div>
         </div>
         <p>{service.service.description}</p>
+        <ServiceDomainEditor key={service.sourcePath} service={service} />
         <div className="detail-badges">
           <OperationalImpactTierButton
             detail
@@ -3457,15 +3479,23 @@ function ServiceDetail({
       </Section>
 
       <Section icon="pipeline" title="Build and release" count={pipelines.length}>
+        {manifestPipelineErrors.has(service.sourcePath) && <p role="alert">{manifestPipelineErrors.get(service.sourcePath)}</p>}
+        {manifestBacked && <PipelineResolutionControls serviceName={service.service.name} />}
+        {!pipelines.length && <p>{manifestBacked ? "No verified build or release links. Review discovered associations or refresh after signing in with az login." : "No build or release links configured."}</p>}
+        {manifestBacked &&
+          <ManifestPipelinesEditor key={`editor:${service.service.name}`} serviceName={service.service.name} />}
         <div className="two-column-grid">
           {pipelines.map(({ pipeline, stage }) => (
-            <PipelineCard key={`${stage}-${pipeline.name}`} pipeline={pipeline} stage={stage} />
+            <PipelineCard key={`${stage}-${pipeline.provider}-${pipeline.url}`} pipeline={pipeline} stage={stage} />
           ))}
         </div>
+        {manifestBacked && <UnverifiedPipelineReferences key={`references:${service.service.name}`} serviceName={service.service.name}
+          renderPipeline={(pipeline, stage) => <PipelineCard pipeline={pipeline} stage={stage} />} />}
       </Section>
 
-      {service.service.serviceTreeId && ev2PortalLinks.length > 0 && (
+      {service.service.serviceTreeId && (
         <ServiceGroupsSection
+          key={service.service.name}
           onPinSrmRelease={pinSrmRelease}
           onOpenSrmRefresh={openSrmRefresh}
           onUnpinSrmRelease={unpinSrmRelease}
@@ -3721,9 +3751,10 @@ function ServiceDetail({
               </button>
             </div>
             <p>
-              Paste an SRM release URL for {service.service.displayName}. Grounds
+              Paste an SRM release URL for the selected service group. Grounds
               will open its dedicated Edge profile, capture the detailed release
-              evidence, and pin it to the selected EV2 service group.
+              evidence, and pin it to that group. Pinning does not establish
+              service ownership.
             </p>
             <form onSubmit={refreshFromSrm}>
               <label htmlFor="srm-release-url">SRM release URL</label>
@@ -3737,7 +3768,7 @@ function ServiceDetail({
                 type="url"
                 value={srmReleaseUrl}
               />
-              <label htmlFor="srm-service-group">EV2 service group</label>
+              <label htmlFor="srm-service-group">Service group</label>
               <div className="srm-selected-service-group" id="srm-service-group">
                 <strong>
                   {selectedSrmServiceGroup?.displayName ?? srmServiceGroupId}
@@ -3915,6 +3946,13 @@ export function App() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  function showServiceFlow() {
+    if (!selectedService) return;
+    setServiceView("flow");
+    window.history.replaceState(null, "", `#/service/${selectedService.service.name}/flow`);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   function showDomainDeployments(domain: ServiceDomain) {
     closeMobileSidebar();
     setDeploymentDomain(domain);
@@ -3924,7 +3962,7 @@ export function App() {
     window.history.replaceState(
       null,
       "",
-      `#/domain/${domain}/deployments`,
+      `#/domain/${encodeURIComponent(domain)}/deployments`,
     );
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -3984,14 +4022,6 @@ export function App() {
     setActivePage("daily-report");
     setSelectedName(undefined);
     window.history.replaceState(null, "", "#/daily-report");
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }
-
-  function showFlows() {
-    closeMobileSidebar();
-    setActivePage("flows");
-    setSelectedName(undefined);
-    window.history.replaceState(null, "", "#/flows");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -4064,7 +4094,6 @@ export function App() {
         onGitHistory={showGitHistory}
         onLocalRepos={showLocalRepos}
         onDailyReport={showDailyReport}
-        onFlows={showFlows}
         onWorkItems={showWorkItems}
         onNotes={showNotes}
         onOverview={showOverview}
@@ -4088,8 +4117,6 @@ export function App() {
           <LocalReposPage />
         ) : activePage === "daily-report" ? (
           <DailyReportPage />
-        ) : activePage === "flows" ? (
-          <FlowsPage onNavigate={selectService} />
         ) : activePage === "deployment-diffs" ? (
           <DeploymentDiffsPage />
         ) : activePage === "domain-deployments" ? (
@@ -4118,14 +4145,25 @@ export function App() {
           />
         ) : selectedService && serviceView === "troubleshoot" ? (
           <ServiceChatPage
+            onFlow={showServiceFlow}
             onBack={showServiceOverview}
             service={selectedService}
           />
+        ) : selectedService && serviceView === "flow" ? (
+          <Suspense fallback={<p role="status">Opening service architecture...</p>}>
+            <ServiceArchitecturePage
+              key={selectedService.service.name}
+              onBack={showServiceOverview}
+              onTroubleshoot={showServiceTroubleshoot}
+              service={selectedService}
+            />
+          </Suspense>
         ) : selectedService ? (
           <ServiceDetail
             onBack={showOverview}
             onNavigate={selectService}
             onTroubleshoot={showServiceTroubleshoot}
+            onFlow={showServiceFlow}
             service={selectedService}
           />
         ) : (

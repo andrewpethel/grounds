@@ -1,0 +1,64 @@
+.architecture-page { min-width: 0; }
+.architecture-page > header { margin: 24px 0; }
+.architecture-page p { color: var(--muted); line-height: 1.6; }
+.architecture-page [role="alert"] { color: var(--danger-text); }
+.architecture-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.architecture-actions button,
+.architecture-contents button {
+  padding: 10px 14px;
+  color: var(--text);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.architecture-actions button:disabled { opacity: .6; cursor: not-allowed; }
+.architecture-artifact { margin-top: 24px; min-width: 0; }
+.architecture-artifact details { padding: 14px 0; }
+.architecture-artifact code { overflow-wrap: anywhere; }
+.architecture-canvas {
+  height: 580px;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--surface);
+}
+.architecture-canvas .react-flow {
+  --xy-background-color: var(--surface);
+  --xy-controls-button-background-color: var(--surface);
+  --xy-controls-button-background-color-hover: var(--surface-hover);
+  --xy-controls-button-color: var(--text);
+  --xy-controls-button-border-color: var(--border);
+  --xy-attribution-background-color: var(--surface);
+  --xy-attribution-color: var(--muted);
+}
+.architecture-component {
+  width: 240px; height: 124px;
+  padding: 12px 16px;
+  box-sizing: border-box;
+  border: 2px solid var(--blue);
+  border-radius: 8px;
+  color: var(--text); background: var(--surface-raised);
+}
+.architecture-component.service { border-color: var(--accent); }
+.architecture-component.datastore { border-color: var(--purple); }
+.architecture-component.queue { border-color: var(--amber); }
+.architecture-component.external { border-color: var(--muted); }
+.architecture-component > span { text-transform: uppercase; font-size: 10px; letter-spacing: .08em; color: var(--muted); }
+.architecture-component strong { display: block; font-size: 14px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+.architecture-component p {
+  font-size: 11px; line-height: 1.5; margin: 6px 0 0;
+  overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+}
+.architecture-edge-label {
+  position: absolute; width: 190px; height: 40px; box-sizing: border-box;
+  padding: 4px 8px; font-size: 11px; line-height: 1.4;
+  border: 1px solid var(--border); border-radius: 5px;
+  color: var(--text); background: var(--surface); overflow: hidden;
+}
+.architecture-legend { font-size: 12px; }
+.architecture-contents > div { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 0; }
+.architecture-evidence { border: 1px solid var(--border); padding: 16px; border-radius: 10px; overflow-wrap: anywhere; }
+.architecture-evidence pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 600px) { .architecture-canvas { height: 420px; } }

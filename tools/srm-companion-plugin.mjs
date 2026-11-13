@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
-import path from "node:path";
 import process from "node:process";
+import { fileURLToPath } from "node:url";
 import { isLocalRequest } from "./local-request.mjs";
 
 function readJsonBody(request) {
@@ -30,12 +30,13 @@ function runBrowserOperation(root, scriptName, argumentsList, timeoutMessage) {
     const child = spawn(
       process.execPath,
       [
-        path.join(root, "tools", scriptName),
+        fileURLToPath(new URL(scriptName, import.meta.url)),
         ...argumentsList,
       ],
       {
         cwd: root,
         windowsHide: false,
+        env: { ...process.env, ...(process.versions.electron ? { ELECTRON_RUN_AS_NODE: "1" } : {}) },
       },
     );
     let output = "";

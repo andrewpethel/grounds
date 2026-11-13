@@ -5,12 +5,16 @@ interface BrowserCacheEntry<T> {
 
 const cachePrefix = "grounds-page-cache:";
 
-export function readBrowserCache<T>(key: string) {
+export function readBrowserCache<T>(key: string, maxAgeMilliseconds?: number) {
   try {
     const entry = JSON.parse(
       window.localStorage.getItem(`${cachePrefix}${key}`) ?? "null",
     ) as BrowserCacheEntry<T> | null;
     if (!entry?.storedAt || entry.value === undefined) return undefined;
+    if (maxAgeMilliseconds !== undefined) {
+      const age = Date.now() - Date.parse(entry.storedAt);
+      if (!(age >= 0 && age < maxAgeMilliseconds)) return undefined;
+    }
     return entry;
   } catch {
     return undefined;

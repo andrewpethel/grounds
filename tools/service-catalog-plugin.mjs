@@ -1,4 +1,5 @@
 import { promises as fs } from "node:fs";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import {
   createServiceValidator,
@@ -138,7 +139,8 @@ export function serviceCatalogPlugin() {
   function configureOnboardingMiddleware(server) {
     server.middlewares.use(async (request, response, next) => {
       const requestUrl = new URL(request.url ?? "/", "http://grounds.local");
-      if (!requestUrl.pathname.startsWith("/__grounds/service-onboarding/")) {
+      const isDomainEdit = requestUrl.pathname === "/__grounds/service-domain";
+      if (!isDomainEdit && !requestUrl.pathname.startsWith("/__grounds/service-onboarding/")) {
         next();
         return;
       }
@@ -146,13 +148,48 @@ export function serviceCatalogPlugin() {
         sendJson(response, 403, { error: "Local Grounds origin required." });
         return;
       }
-      if (request.method !== "POST") {
+      if (request.method !== (isDomainEdit ? "PUT" : "POST")) {
         sendJson(response, 405, { error: "Method not allowed." });
         return;
       }
 
       try {
         const payload = await readJsonBody(request);
+        if (isDomainEdit) {
+          const entry = acceptedRecords.get(payload.sourcePath);
+          if (!entry) {
+            sendJson(response, 404, { error: "Unknown service source path." });
+            return;
+          }
+          if (typeof payload.domain !== "string" ||
+              !(payload.previousDomain === null || typeof payload.previousDomain === "string")) {
+            throw new Error("Supply a domain title and the previous saved domain.");
+          }
+          const record = JSON.parse(await fs.readFile(entry.sourceFilePath, "utf8"));
+          if ((record.service.domain ?? null) !== payload.previousDomain) {
+            sendJson(response, 409, { error: "The service domain changed. Reload before editing it again." });
+            return;
+          }
+          const domain = payload.domain.trim();
+          if (domain) record.service.domain = domain;
+          else delete record.service.domain;
+          record.lastUpdated = new Date().toISOString();
+          if (!validate(record)) {
+            sendJson(response, 400, { error: "Invalid service domain or record.", errors: validate.errors ?? [] });
+            return;
+          }
+          const temporary = `${entry.sourceFilePath}.${randomUUID()}.tmp`;
+          try {
+            await fs.writeFile(temporary, `${JSON.stringify(record, null, 2)}\n`, { flag: "wx" });
+            await fs.rename(temporary, entry.sourceFilePath);
+          } finally {
+            await fs.rm(temporary, { force: true });
+          }
+          await validateFile(entry.sourceFilePath);
+          sendJson(response, 200, { serviceName: record.service.name, domain: domain || record.service.displayName });
+          invalidateCatalog(server, true);
+          return;
+        }
         if (requestUrl.pathname === "/__grounds/service-onboarding/analyze") {
           const analysis = await analyzeRepositoryUrl(payload.repositoryUrl);
           sendJson(response, 200, { analysis });

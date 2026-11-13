@@ -1,10 +1,13 @@
 .grounds/
+GroundsManifest.json
 .env
 .env.*
 !.env.example
 
 node_modules/
 dist/
+dist-desktop/
+release/
 coverage/
 .vite/
 *.tsbuildinfo

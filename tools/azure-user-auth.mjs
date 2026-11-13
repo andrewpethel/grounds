@@ -3,50 +3,43 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 
-function azureCliCommand() {
-  if (process.platform !== "win32") return "az";
-
-  return (
-    [
-      process.env["ProgramFiles(x86)"],
-      process.env.PROGRAMFILES,
-      "C:\\Program Files (x86)",
-    ]
-      .filter(Boolean)
-      .map((root) =>
-        path.join(
-          root,
-          "Microsoft",
-          "SDKs",
-          "Azure",
-          "CLI2",
-          "wbin",
-          "az.cmd",
-        ),
-      )
-      .find((candidate) => existsSync(candidate)) ?? "az.cmd"
-  );
+export function azureCliInvocation(argumentsList) {
+  if (process.platform !== "win32") {
+    return { command: "az", args: argumentsList, options: { windowsHide: true, shell: false } };
+  }
+  const launchers = [
+    process.env["ProgramFiles(x86)"],
+    process.env.PROGRAMFILES,
+    "C:\\Program Files (x86)",
+    "C:\\Program Files",
+  ]
+    .filter(Boolean)
+    .map((root) => path.join(root, "Microsoft", "SDKs", "Azure", "CLI2", "wbin", "az.cmd"));
+  launchers.push(...(process.env.PATH ?? "").split(path.delimiter).filter(Boolean).map((directory) => path.join(directory.replace(/^"|"$/g, ""), "az.cmd")));
+  const python = launchers.filter((launcher) => existsSync(launcher))
+    .map((launcher) => path.resolve(path.dirname(launcher), "..", "python.exe"))
+    .find((candidate) => existsSync(candidate));
+  if (!python) throw new Error("Azure CLI's bundled Python executable was not found. Install or repair Azure CLI and run az login.");
+  return {
+    command: python, args: ["-IBm", "azure.cli", ...argumentsList],
+    options: { windowsHide: true, shell: false, env: { ...process.env, AZ_INSTALLER: "MSI" } },
+  };
 }
 
-export function getAzureCliToken(resource) {
+export function getAzureCliToken(resource, { signal } = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(
-      azureCliCommand(),
-      [
-        "account",
-        "get-access-token",
-        "--resource",
-        resource,
-        "--query",
-        "accessToken",
-        "--output",
-        "tsv",
-      ],
-      {
-        shell: process.platform === "win32",
-        windowsHide: true,
-      },
-    );
+    signal?.throwIfAborted();
+    const invocation = azureCliInvocation([
+      "account",
+      "get-access-token",
+      "--resource",
+      resource,
+      "--query",
+      "accessToken",
+      "--output",
+      "tsv",
+    ]);
+    const child = spawn(invocation.command, invocation.args, { ...invocation.options, signal });
     let output = "";
     let errorOutput = "";
     const timeout = setTimeout(() => {
