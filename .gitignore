@@ -7,6 +7,8 @@ GroundsManifest.json
 node_modules/
 dist/
 dist-desktop/
+dist-demo/
+release-demo/
 release/
 coverage/
 .vite/
